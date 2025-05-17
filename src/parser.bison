@@ -27,28 +27,6 @@ SectionStatement::SectionType get_section_type(const char* section_name) {
     else if (strcmp(section_name, "system") == 0) return SectionStatement::SectionType::SYSTEM;
     else return SectionStatement::SectionType::CUSTOM;
 }
-
-// Debug logging functions
-int nesting_level = 0;
-
-void enter_section(const char* name) {
-    nesting_level = 1;
-    printf("Debug: Entering section %s\n", name);
-}
-
-void enter_block(const char* name) {
-    nesting_level++;
-    printf("Debug: Increasing nesting to %d, entering block %s\n", nesting_level, name);
-}
-
-void exit_block() {
-    nesting_level--;
-    printf("Debug: Decreasing nesting to %d\n", nesting_level);
-    
-    if (nesting_level == 0) {
-        printf("Debug: Leaving section\n");
-    }
-}
 %}
 
 %define parse.error verbose
@@ -98,15 +76,19 @@ void exit_block() {
 %token TOKEN_UNKNOWN
 
 /* Non-terminals */
-%type <str_val> property_name section_name any_identifier
+%type <str_val> property_name section_name identifier
 %type <program_val> config
 %type <section_val> section section_list
 %type <block_val> block statement_list
-%type <stmt_val> statement property_statement subsection_statement error_statement
+%type <stmt_val> statement
 %type <value_val> simple_value value_item
 %type <list_val> list_value
 %type <expr_val> value
 %type <list_val> value_list
+
+/* Define precedence */
+%left TOKEN_COLON
+%left TOKEN_EQUALS
 
 /* Start symbol */
 %start config
@@ -135,9 +117,7 @@ section_list
 
 section
     : section_name TOKEN_COLON block {
-        enter_section($1);
         $$ = new SectionStatement($1, get_section_type($1), $3);
-        exit_block();
     }
     ;
 
@@ -178,13 +158,13 @@ statement_list
     ;
 
 statement
-    : property_statement { $$ = $1; }
-    | subsection_statement { $$ = $1; }
-    | error_statement { $$ = nullptr; }
-    ;
-
-error_statement
-    : TOKEN_SEMICOLON {
+    : property_name TOKEN_EQUALS value {
+        $$ = new PropertyStatement($1, static_cast<Value*>($3));
+    }
+    | identifier TOKEN_COLON block {
+        $$ = new SectionStatement($1, SectionStatement::SectionType::CUSTOM, $3);
+    }
+    | TOKEN_SEMICOLON {
         yyerror("Semicolons are not allowed in this DSL");
         YYERROR;
         $$ = nullptr;
@@ -194,53 +174,14 @@ error_statement
         YYERROR;
         $$ = nullptr;
     }
-    | property_name error {
-        yyerror("Invalid property assignment syntax");
-        YYERROR;
-        $$ = nullptr;
-    }
-    | value error {
-        yyerror("Unexpected token after value");
-        YYERROR;
-        $$ = nullptr;
-    }
-    | error TOKEN_EQUALS {
-        yyerror("Invalid token before equals sign");
-        YYERROR;
-        $$ = nullptr;
-    }
-    | error TOKEN_COLON {
-        yyerror("Invalid token before colon");
+    | error {
+        yyerror("Invalid syntax");
         YYERROR;
         $$ = nullptr;
     }
     ;
 
-property_statement
-    : property_name TOKEN_EQUALS value {
-        $$ = new PropertyStatement($1, static_cast<Value*>($3));
-    }
-    ;
-
-subsection_statement
-    : any_identifier TOKEN_COLON block {
-        enter_block($1);
-        $$ = new SectionStatement($1, SectionStatement::SectionType::CUSTOM, $3);
-        exit_block();
-    }
-    | any_identifier TOKEN_COLON TOKEN_SEMICOLON {
-        yyerror("Invalid syntax: semicolon after colon. After a section declaration, only a newline or comment is allowed");
-        YYERROR;
-        $$ = nullptr;
-    }
-    | any_identifier TOKEN_COLON error {
-        yyerror("Invalid syntax after colon. After a section declaration, only a newline or comment is allowed");
-        YYERROR;
-        $$ = nullptr;
-    }
-    ;
-
-/* Generic property name to cover all token types that can appear before equals */
+/* Generic property name that can appear before equals */
 property_name
     : TOKEN_IDENTIFIER { $$ = strdup(yytext); }
     | TOKEN_VENDOR { $$ = "vendor"; }
@@ -260,8 +201,8 @@ property_name
     | TOKEN_GATEWAY { $$ = "gateway"; }
     ;
 
-/* Generic identifier to cover all token types that can appear before colon */
-any_identifier
+/* Generic identifier for tokens that can appear before colon */
+identifier
     : TOKEN_IDENTIFIER { $$ = strdup(yytext); }
     | TOKEN_ETHERNET { $$ = "ethernet"; }
     | TOKEN_VLAN { $$ = "vlan"; }
@@ -281,8 +222,6 @@ simple_value
         $$ = new StringValue($1);
     }
     | TOKEN_NUMBER { 
-        char buffer[64];
-        snprintf(buffer, sizeof(buffer), "%d", $1);
         $$ = new NumberValue($1);
     }
     | TOKEN_BOOL { 
@@ -295,19 +234,15 @@ simple_value
         $$ = new IPCIDRValue($1);
     }
     | TOKEN_IP_RANGE { 
-        // Use a compatible string value if IPRangeValue doesn't exist
         $$ = new StringValue($1);
     }
     | TOKEN_IPV6_ADDRESS { 
-        // Use a compatible value type if IPv6AddressValue doesn't exist
         $$ = new StringValue($1); 
     }
     | TOKEN_IPV6_CIDR { 
-        // Use a compatible value type if IPv6CIDRValue doesn't exist
         $$ = new StringValue($1);
     }
     | TOKEN_IPV6_RANGE { 
-        // Use a compatible value type if IPv6RangeValue doesn't exist
         $$ = new StringValue($1);
     }
     | TOKEN_ENABLED { 
@@ -350,20 +285,14 @@ list_value
 
 value_list
     : value_item { 
-        // Create a vector of Value pointers for the ListValue constructor
         std::vector<Value*> values;
         values.push_back($1);
         $$ = new ListValue(values);
     }
     | value_list TOKEN_COMMA value_item { 
-        // Get the existing list
         $$ = $1;
-        
-        // Create a new list with all existing values plus the new one
         ValueList values = $$->get_values();
         values.push_back($3);
-        
-        // Replace the old list with a new one containing all values
         delete $$;
         $$ = new ListValue(values);
     }
