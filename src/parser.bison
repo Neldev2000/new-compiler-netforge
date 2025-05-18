@@ -55,7 +55,7 @@ SectionStatement::SectionType get_section_type(const char* section_name) {
 %token TOKEN_SEMICOLON
 
 /* Keyword tokens */
-%token TOKEN_DEVICE TOKEN_VENDOR TOKEN_INTERFACES TOKEN_IP TOKEN_ROUTING
+%token TOKEN_DEVICE TOKEN_VENDOR TOKEN_MODEL TOKEN_INTERFACES TOKEN_IP TOKEN_ROUTING
 %token TOKEN_FIREWALL TOKEN_SYSTEM TOKEN_TYPE TOKEN_ADMIN_STATE
 %token TOKEN_DESCRIPTION TOKEN_ETHERNET TOKEN_SPEED TOKEN_DUPLEX
 %token TOKEN_VLAN TOKEN_VLAN_ID TOKEN_INTERFACE TOKEN_ADDRESS
@@ -185,6 +185,7 @@ statement
 property_name
     : TOKEN_IDENTIFIER { $$ = strdup(yytext); }
     | TOKEN_VENDOR { $$ = "vendor"; }
+    | TOKEN_MODEL { $$ = "model"; }
     | TOKEN_TYPE { $$ = "type"; }
     | TOKEN_ADMIN_STATE { $$ = "admin_state"; }
     | TOKEN_DESCRIPTION { $$ = "description"; }

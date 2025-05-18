@@ -152,6 +152,77 @@ std::string ConfigDeclaration::to_mikrotik(const std::string& ident) const
     // Determine the appropriate action based on path and configuration
     std::string action = determine_action(menu_path);
     
+    // Special handling for system identity
+    if (menu_path == "/system identity") {
+        std::string vendor_value = "";
+        std::string model_value = "";
+        std::stringstream nested_commands;
+        
+        // Find vendor and model properties
+        for (const auto* statement : statements) {
+            if (statement) {
+                if (const auto* prop_stmt = dynamic_cast<const PropertyStatement*>(statement)) {
+                    const std::string& prop_name = prop_stmt->get_name();
+                    if (prop_name == "vendor") {
+                        if (prop_stmt->get_value()) {
+                            vendor_value = prop_stmt->get_value()->to_mikrotik("");
+                            // Remove quotes if present
+                            if (vendor_value.size() >= 2 && vendor_value.front() == '"' && vendor_value.back() == '"') {
+                                vendor_value = vendor_value.substr(1, vendor_value.size() - 2);
+                            }
+                        }
+                    } else if (prop_name == "model") {
+                        if (prop_stmt->get_value()) {
+                            model_value = prop_stmt->get_value()->to_mikrotik("");
+                            // Remove quotes if present
+                            if (model_value.size() >= 2 && model_value.front() == '"' && model_value.back() == '"') {
+                                model_value = model_value.substr(1, model_value.size() - 2);
+                            }
+                        }
+                    }
+                } else {
+                    // Process other types of statements
+                    nested_commands << statement->to_mikrotik(ident + "    ");
+                }
+            }
+        }
+        
+        // Concatenate vendor and model for the name parameter
+        if (!vendor_value.empty() || !model_value.empty()) {
+            std::string device_name;
+            if (!vendor_value.empty() && !model_value.empty()) {
+                // Remove quotes if present in both values
+                if (vendor_value.size() >= 2 && vendor_value.front() == '"' && vendor_value.back() == '"') {
+                    vendor_value = vendor_value.substr(1, vendor_value.size() - 2);
+                }
+                if (model_value.size() >= 2 && model_value.front() == '"' && model_value.back() == '"') {
+                    model_value = model_value.substr(1, model_value.size() - 2);
+                }
+                device_name = vendor_value + "_" + model_value;
+            } else if (!vendor_value.empty()) {
+                // Remove quotes if present
+                if (vendor_value.size() >= 2 && vendor_value.front() == '"' && vendor_value.back() == '"') {
+                    vendor_value = vendor_value.substr(1, vendor_value.size() - 2);
+                }
+                device_name = vendor_value;
+            } else {
+                // Remove quotes if present
+                if (model_value.size() >= 2 && model_value.front() == '"' && model_value.back() == '"') {
+                    model_value = model_value.substr(1, model_value.size() - 2);
+                }
+                device_name = model_value;
+            }
+            
+            // Generate the system identity command
+            ss << ident << menu_path << " " << action << " name=\"" << device_name << "\"\n";
+        }
+        
+        // Add nested commands
+        ss << nested_commands.str();
+        
+        return ss.str();
+    }
+    
     // Collect parameters from child statements
     std::vector<std::string> property_params;
     std::stringstream nested_commands;

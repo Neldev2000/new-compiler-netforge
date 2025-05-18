@@ -206,6 +206,78 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
     // Determine action based on section type and name
     std::string action = determine_action(type, name);
 
+    // Special handling for device section which maps to /system identity
+    if (type == SectionType::DEVICE) {
+        std::string vendor_value = "";
+        std::string model_value = "";
+        std::stringstream nested_commands;
+
+        // Extract vendor and model values from property statements
+        if (block) {
+            for (const auto* stmt : block->get_statements()) {
+                if (const auto* prop_stmt = dynamic_cast<const PropertyStatement*>(stmt)) {
+                    const std::string& prop_name = prop_stmt->get_name();
+                    if (prop_name == "vendor") {
+                        if (prop_stmt->get_value()) {
+                            vendor_value = prop_stmt->get_value()->to_mikrotik("");
+                            // Remove quotes if present
+                            if (vendor_value.size() >= 2 && vendor_value.front() == '"' && vendor_value.back() == '"') {
+                                vendor_value = vendor_value.substr(1, vendor_value.size() - 2);
+                            }
+                        }
+                    } else if (prop_name == "model") {
+                        if (prop_stmt->get_value()) {
+                            model_value = prop_stmt->get_value()->to_mikrotik("");
+                            // Remove quotes if present
+                            if (model_value.size() >= 2 && model_value.front() == '"' && model_value.back() == '"') {
+                                model_value = model_value.substr(1, model_value.size() - 2);
+                            }
+                        }
+                    }
+                } else {
+                    // Process other statements
+                    nested_commands << stmt->to_mikrotik(ident + "    ");
+                }
+            }
+        }
+
+        // Concatenate vendor and model for the name parameter
+        if (!vendor_value.empty() || !model_value.empty()) {
+            std::string device_name;
+            if (!vendor_value.empty() && !model_value.empty()) {
+                // Remove quotes if present in both values
+                if (vendor_value.size() >= 2 && vendor_value.front() == '"' && vendor_value.back() == '"') {
+                    vendor_value = vendor_value.substr(1, vendor_value.size() - 2);
+                }
+                if (model_value.size() >= 2 && model_value.front() == '"' && model_value.back() == '"') {
+                    model_value = model_value.substr(1, model_value.size() - 2);
+                }
+                device_name = vendor_value + "_" + model_value;
+            } else if (!vendor_value.empty()) {
+                // Remove quotes if present
+                if (vendor_value.size() >= 2 && vendor_value.front() == '"' && vendor_value.back() == '"') {
+                    vendor_value = vendor_value.substr(1, vendor_value.size() - 2);
+                }
+                device_name = vendor_value;
+            } else {
+                // Remove quotes if present
+                if (model_value.size() >= 2 && model_value.front() == '"' && model_value.back() == '"') {
+                    model_value = model_value.substr(1, model_value.size() - 2);
+                }
+                device_name = model_value;
+            }
+            
+            // Generate the system identity command
+            ss << ident << mikrotik_path << " " << action << " name=\"" << device_name << "\"\n";
+        }
+
+        // Add nested commands
+        ss << nested_commands.str();
+        
+        return ss.str();
+    }
+
+    // Regular processing for non-device sections
     // Recopilate parameters from PropertyStatement children
     std::vector<std::string> property_params;
     std::stringstream nested_commands;
@@ -244,8 +316,7 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                 
                 // Process the sub-section with the combined path
                 std::stringstream sub_section_ss;
-                sub_section_ss << ident << "# Sub-section: " << sub_section->get_name() 
-                              << " (Full path: " << formatted_sub_path << ")\n";
+                sub_section_ss << ident << formatted_sub_path << " " << action;
                 
                 // Process the properties of the sub-section
                 std::vector<std::string> sub_property_params;
@@ -267,7 +338,7 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                 
                 // If we have properties, assemble the command for the sub-section
                 if (!sub_property_params.empty()) {
-                    sub_section_ss << ident << formatted_sub_path << " " << sub_action;
+                    sub_section_ss << " " << sub_action;
                     
                     // Add all parameters with spaces between them
                     for (const auto& param : sub_property_params) {
@@ -332,7 +403,7 @@ std::string DeclarationStatement::to_mikrotik(const std::string& ident) const
 {
     // Just delegate to the declaration's to_mikrotik method
     return declaration ? declaration->to_mikrotik(ident) : ident + "# null declaration\n";
-} 
+}
 
 std::string SectionStatement::determine_action(SectionType type, const std::string& section_name) {
       // Usar sección system
