@@ -60,7 +60,9 @@ std::string ConfigDeclaration::to_string() const
 std::string ConfigDeclaration::to_mikrotik(const std::string& ident) const
 {
     std::stringstream ss;
-    ss << ident << "# Configuration section: " << name << "\n";
+    
+    // Skip adding comments about the configuration section
+    // ss << ident << "# Configuration section: " << name << "\n";
     
     // Determine the MikroTik base path from the configuration name
     std::string menu_path;
@@ -68,6 +70,11 @@ std::string ConfigDeclaration::to_mikrotik(const std::string& ident) const
     // Convert name to lowercase for case-insensitive comparison
     std::string lower_name = name;
     std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
+    
+    // Skip device/vendor/model processing - this is already handled by SectionStatement
+    if (lower_name == "device" || lower_name == "system identity") {
+        return ""; // Skip processing to avoid duplicate system identity commands
+    }
     
     // Map common configuration names to MikroTik paths
     if (lower_name.find("dhcp") != std::string::npos) {
@@ -419,163 +426,130 @@ std::string InterfaceDeclaration::to_mikrotik(const std::string& ident) const
 {
     std::stringstream ss;
     
+    // Ensure valid interface name - skip if invalid
+    if (name.empty() || name == ":") {
+        ss << ident << "# Warning: Invalid interface name: \"" << name << "\"\n";
+        return ss.str();
+    }
+    
     // Interface declarations in MikroTik use /interface path
     ss << ident << "# Interface: " << name << "\n";
     
-    // Mejorar detección del tipo de interfaz a partir del nombre
+    // Determine interface type and parse properties
     std::string iface_type = "ethernet"; // Default type
     std::string iface_name = name;
     
-    // Detección mejorada de interfaces por patrón de nombre
-    std::string lower_name = name;
-    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
-    
-    if (lower_name.find("bridge") != std::string::npos) {
-        iface_type = "bridge";
-    } else if (lower_name.find("vlan") != std::string::npos) {
-        iface_type = "vlan";
-    } else if (lower_name.find("wlan") != std::string::npos || lower_name.find("wifi") != std::string::npos) {
-        iface_type = "wireless";
-    } else if (lower_name.find("bond") != std::string::npos) {
-        iface_type = "bonding";
-    } else if (lower_name.find("ppp") != std::string::npos || lower_name.find("ovpn") != std::string::npos) {
-        iface_type = "pppoe-client";
-        if (lower_name.find("ovpn") != std::string::npos || lower_name.find("vpn") != std::string::npos) {
-            iface_type = "ovpn-client";
-        }
-    } else if (lower_name.find("veth") != std::string::npos) {
-        iface_type = "veth";
-    } else if (lower_name.find("vrrp") != std::string::npos) {
-        iface_type = "vrrp";
-    } else if (lower_name.find("list") != std::string::npos) {
-        iface_type = "list";
-    } else {
-        // El enfoque original: intentar determinar por prefijo numérico
-        size_t pos = name.find_first_of("0123456789");
-        if (pos != std::string::npos && pos > 0) {
-            iface_type = name.substr(0, pos);
-            // Map common interface abbreviations to MikroTik types
-            if (iface_type == "eth" || iface_type == "ether") {
-                iface_type = "ethernet";
-            } else if (iface_type == "wlan" || iface_type == "wifi") {
-                iface_type = "wireless";
-            } else if (iface_type == "br") {
-                iface_type = "bridge";
-            } else if (iface_type == "vlan") {
-                iface_type = "vlan";
-            } else if (iface_type == "lo") {
-                iface_type = "loopback";
-            }
-        }
-    }
-    
-    // Clasificar las propiedades para el comando add vs set
-    std::vector<std::string> add_properties;
-    std::vector<std::pair<std::string, std::string>> set_properties; // Par de (propiedad, valor)
+    // Properties to collect
+    std::vector<std::string> properties;
     std::stringstream bridge_port_commands;
+    std::stringstream ip_commands;
     std::stringstream other_commands;
     
-    // Propiedades comunes para el comando add inicial
-    std::set<std::string> add_compatible_props = {
-        "name", "type", "mtu", "mac-address", "comment", "disabled", "vlan-id", "interface", 
-        "master-port", "vlan-mode", "protocol-mode"
-    };
-    
-    // Propiedades específicas por tipo de interfaz
-    if (iface_type == "bridge") {
-        add_compatible_props.insert({"protocol-mode", "priority", "auto-mac", "ageing-time"});
-    } else if (iface_type == "wireless") {
-        add_compatible_props.insert({"ssid", "mode", "frequency", "band", "channel-width"});
-    } else if (iface_type == "vlan") {
-        add_compatible_props.insert({"vlan-id", "interface"});
-    }
-    
-    // Recopilar propiedades y sub-configuraciones
+    // Process statements to find interface type and properties
     for (const auto* statement : statements) {
         if (!statement) continue;
         
         if (const auto* prop_stmt = dynamic_cast<const PropertyStatement*>(statement)) {
             std::string prop_name = prop_stmt->get_name();
-            std::string prop_value = prop_stmt->to_mikrotik("");
+            std::string prop_value;
             
-            // Manejar propiedades especiales
-            if (prop_name == "name") {
-                iface_name = prop_value.substr(prop_value.find('=') + 1); // Extraer el valor después de =
-                // Limpiar comillas si las hay
-                if (iface_name.front() == '"' && iface_name.back() == '"') {
-                    iface_name = iface_name.substr(1, iface_name.size() - 2);
+            // Get the raw value
+            if (prop_stmt->get_value()) {
+                prop_value = prop_stmt->get_value()->to_mikrotik("");
+                // Remove quotes if present
+                if (prop_value.size() >= 2 && prop_value.front() == '"' && prop_value.back() == '"') {
+                    prop_value = prop_value.substr(1, prop_value.size() - 2);
                 }
-                add_properties.push_back(prop_value);
-            } else if (prop_name == "type") {
-                iface_type = prop_value.substr(prop_value.find('=') + 1);
-                // Limpiar comillas si las hay
-                if (iface_type.front() == '"' && iface_type.back() == '"') {
-                    iface_type = iface_type.substr(1, iface_type.size() - 2);
+            }
+            
+            // Handle specific properties
+            if (prop_name == "type") {
+                iface_type = prop_value;
+            }
+            else if (prop_name == "description") {
+                // Map description to comment
+                properties.push_back("comment=\"" + prop_value + "\"");
+            }
+            else if (prop_name == "admin_state") {
+                // Map admin_state to disabled (inverted logic)
+                bool disabled = (prop_value != "up" && prop_value != "enabled");
+                properties.push_back("disabled=" + std::string(disabled ? "yes" : "no"));
+            }
+            else {
+                // Other properties pass through as-is
+                properties.push_back(prop_name + "=\"" + prop_value + "\"");
+            }
+        }
+        else if (const auto* section_stmt = dynamic_cast<const SectionStatement*>(statement)) {
+            // Handle nested sections
+            std::string section_name = section_stmt->get_name();
+            
+            if (section_name == "ip") {
+                // Process IP configuration for this interface
+                if (section_stmt->get_block()) {
+                    for (const auto* ip_stmt : section_stmt->get_block()->get_statements()) {
+                        if (const auto* ip_prop = dynamic_cast<const PropertyStatement*>(ip_stmt)) {
+                            if (ip_prop->get_name() == "address" && ip_prop->get_value()) {
+                                std::string ip_value = ip_prop->get_value()->to_mikrotik("");
+                                // Remove quotes if present
+                                if (ip_value.size() >= 2 && ip_value.front() == '"' && ip_value.back() == '"') {
+                                    ip_value = ip_value.substr(1, ip_value.size() - 2);
+                                }
+                                
+                                // Generate /ip address add command
+                                ip_commands << ident << "/ip address add address=" 
+                                          << ip_value << " interface=" 
+                                          << iface_name << "\n";
+                            }
+                        }
+                    }
                 }
-                add_properties.push_back(prop_value);
-            } else if (add_compatible_props.find(prop_name) != add_compatible_props.end()) {
-                add_properties.push_back(prop_value);
-            } else {
-                // Es una propiedad que debe usar comando set
-                set_properties.push_back({prop_name, prop_value});
             }
-        } else if (const auto* config_decl = dynamic_cast<const ConfigDeclaration*>(statement)) {
-            // Manejar sub-configuraciones
-            if (iface_type == "bridge" && config_decl->get_name().find("port") != std::string::npos) {
-                // Bridge ports sub-configuration
-                bridge_port_commands << statement->to_mikrotik(ident);
-            } else {
-                // Other interface-specific configurations
-                other_commands << statement->to_mikrotik(ident);
+            else if (section_name.find("port") != std::string::npos && iface_type == "bridge") {
+                // Handle bridge port configuration
+                bridge_port_commands << section_stmt->to_mikrotik(ident);
             }
-        } else {
-            // Otro tipo de declaración o statement
+            else {
+                // Other sections
+                other_commands << section_stmt->to_mikrotik(ident);
+            }
+        }
+        else {
+            // Other types of statements
             other_commands << statement->to_mikrotik(ident);
         }
     }
     
-    // Generar el comando add principal
-    ss << ident << "/interface " << iface_type << " add";
-    
-    // Asegurar que la propiedad name siempre esté presente
-    bool has_name = false;
-    for (const auto& prop : add_properties) {
-        if (prop.find("name=") == 0) {
-            has_name = true;
-            break;
-        }
+    // Generate the interface command with proper path based on type
+    // Ethernet interfaces use 'set' instead of 'add'
+    std::string command = "add";
+    if (iface_type == "ethernet") {
+        command = "set";
+        
+        // With 'set', interface name comes after command
+        ss << ident << "/interface " << iface_type << " " << command << " " << iface_name;
+    }
+    else {
+        // With 'add', name is a parameter
+        ss << ident << "/interface " << iface_type << " " << command << " name=\"" << iface_name << "\"";
     }
     
-    if (!has_name) {
-        ss << " name=" << "\"" << iface_name << "\"";
-    }
-    
-    // Añadir todas las propiedades compatibles con add
-    for (const auto& prop : add_properties) {
-        // Evitar duplicar name si ya lo agregamos
-        if (!has_name || prop.find("name=") != 0) {
-            ss << " " << prop;
-        }
+    // Add all the properties
+    for (const auto& prop : properties) {
+        ss << " " << prop;
     }
     ss << "\n";
     
-    // Generar comandos set separados para propiedades que requieren set
-    if (!set_properties.empty()) {
-        for (const auto& [prop_name, prop_value] : set_properties) {
-            ss << ident << "/interface " << iface_type << " set [find name=\"" << iface_name << "\"] " 
-               << prop_value << "\n";
-        }
-    }
+    // Add IP configuration commands
+    ss << ip_commands.str();
     
-    // Añadir comandos bridge port si existen
-    if (bridge_port_commands.str().length() > 0) {
+    // Add bridge port commands if this is a bridge
+    if (iface_type == "bridge") {
         ss << bridge_port_commands.str();
     }
     
-    // Añadir otros comandos relacionados con la interfaz
-    if (other_commands.str().length() > 0) {
-        ss << other_commands.str();
-    }
+    // Add other commands
+    ss << other_commands.str();
     
     return ss.str();
 }

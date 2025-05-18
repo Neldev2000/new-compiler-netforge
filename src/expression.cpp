@@ -41,8 +41,8 @@ std::string StringValue::to_string() const
 
 std::string StringValue::to_mikrotik(const std::string& ident) const
 {
-    // In MikroTik, strings are enclosed in double quotes
-    return  "\"" + str_value + "\"";
+    // Return the string value without quotes (quotes will be added where needed)
+    return str_value;
 }
 
 // NumberValue implementation
