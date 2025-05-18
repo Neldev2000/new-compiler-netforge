@@ -46,7 +46,6 @@
         while (indent_stack.size() > 1) {  // Keep the base level 0
             indent_stack.pop_back();
             token_queue.push_back(TOKEN_DEDENT);
-            fprintf(stderr, "DEBUG: SCANNER Adding DEDENT token at EOF\n");
         }
         
         eof_handled = true;
@@ -129,7 +128,6 @@ IPV6_RANGE      {IPV6_ADDRESS}\-{IPV6_ADDRESS}
     /* Count spaces for indentation */
     if (at_line_start) {
         current_indent = yyleng;
-        fprintf(stderr, "DEBUG: SCANNER Indent level %d\n", current_indent);
     }
 }
 
@@ -151,7 +149,6 @@ IPV6_RANGE      {IPV6_ADDRESS}\-{IPV6_ADDRESS}
     if (current_indent > indent_stack.back()) {
         /* Indentation increased - emit INDENT token */
         indent_stack.push_back(current_indent);
-        fprintf(stderr, "DEBUG: SCANNER Emitting INDENT token (level %d)\n", current_indent);
         at_line_start = false;
         BEGIN(INITIAL);
         return TOKEN_INDENT;
@@ -173,13 +170,10 @@ IPV6_RANGE      {IPV6_ADDRESS}\-{IPV6_ADDRESS}
         
         /* Pop one level and return a DEDENT token */
         indent_stack.pop_back();
-        fprintf(stderr, "DEBUG: SCANNER Emitting DEDENT token (level %d)\n", current_indent);
-        
         /* If we need more DEDENTs, queue them */
         while (current_indent < indent_stack.back()) {
             indent_stack.pop_back();
             token_queue.push_back(TOKEN_DEDENT);
-            fprintf(stderr, "DEBUG: SCANNER Queuing DEDENT token (level %d)\n", indent_stack.back());
         }
         
         at_line_start = false;
@@ -278,7 +272,6 @@ IPV6_RANGE      {IPV6_ADDRESS}\-{IPV6_ADDRESS}
 {IP_ADDRESS}    { yylval.str_val = strdup(yytext); return TOKEN_IP_ADDRESS; }
 {BOOL}          { yylval.str_val = strdup(yytext); return TOKEN_BOOL; }
 {INTERFACE_ID}  { 
-                    fprintf(stderr, "DEBUG: SCANNER Found interface identifier: '%s'\n", yytext);
                     yylval.str_val = strdup(yytext); 
                     return TOKEN_IDENTIFIER; 
                 }

@@ -140,9 +140,8 @@ InterfacesSection::InterfacesSection(std::string_view name) noexcept
     : SpecializedSection(name)
 {
     this->type = SectionType::INTERFACES;
-    
-    // Add debug to print constructor initialization
-    fprintf(stderr, "DEBUG: InterfacesSection constructor called with name '%s'\n", std::string(name).c_str());
+
+
 }
 
 bool InterfacesSection::validate() const noexcept {
@@ -236,13 +235,13 @@ std::string InterfacesSection::translate_section(const std::string& ident) const
     // Process subsections in our block - these are "officially" inside the interfaces: section
     if (get_block()) {
         const BlockStatement* block = get_block();
-        fprintf(stderr, "DEBUG: InterfacesSection has %zu statements in block\n", block->get_statements().size());
+   
         
         // 1. First approach - look for subsections within our block (normal case)
         for (const Statement* stmt : block->get_statements()) {
             if (const SectionStatement* section = dynamic_cast<const SectionStatement*>(stmt)) {
                 std::string interface_name = section->get_name();
-                fprintf(stderr, "DEBUG: Processing interface subsection '%s' from within interfaces block\n", interface_name.c_str());
+              
                 
                 // Clean up interface name
                 if (!interface_name.empty() && interface_name.back() == ':') {
@@ -257,7 +256,7 @@ std::string InterfacesSection::translate_section(const std::string& ident) const
                 
                 // Ensure interface name is valid
                 if (interface_name.empty()) {
-                    fprintf(stderr, "ERROR: Empty interface name found, section name='%s'\n", section->get_name().c_str());
+                    
                     continue; // Skip invalid interface names
                 }
                 
@@ -361,8 +360,7 @@ std::string InterfacesSection::process_interface_section(const SectionStatement*
         }
     }
     
-    fprintf(stderr, "DEBUG: Generating command for interface '%s' with type '%s'\n", 
-            interface_name.c_str(), type.c_str());
+   
     
     // Generate commands based on interface type
     if (type == "ethernet") {
@@ -1459,29 +1457,9 @@ std::string FirewallSection::translate_section(const std::string& ident) const {
 
 // SystemSection implementation
 SystemSection::SystemSection(std::string_view name) noexcept
-    : SpecializedSection(name)
+    : DeviceSection(name)
 {
     this->type = SectionType::SYSTEM;
-}
-
-bool SystemSection::validate() const noexcept {
-    const BlockStatement* block = get_block();
-    if (!block) return false;
-    
-    // Add specific system section validation logic here
-    return true;
-}
-
-std::string SystemSection::translate_section(const std::string& ident) const {
-    std::string result = ident + "# System Configuration: " + get_name() + "\n";
-    
-    if (get_block()) {
-        // System-specific translation
-        result += ident + "/system\n";
-        result += get_block()->to_mikrotik(ident + "  ");
-    }
-    
-    return result;
 }
 
 // CustomSection implementation

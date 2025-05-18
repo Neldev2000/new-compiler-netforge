@@ -71,11 +71,7 @@ BlockStatement::BlockStatement(const StatementList& statements) noexcept
 void BlockStatement::add_statement(Statement* statement) noexcept 
 {
     if (statement) {
-        fprintf(stderr, "DEBUG: Adding statement to block, now has %zu statements\n", statements.size() + 1);
-        if (dynamic_cast<SectionStatement*>(statement)) {
-            SectionStatement* section = dynamic_cast<SectionStatement*>(statement);
-            fprintf(stderr, "DEBUG: Statement is a section with name '%s'\n", section->get_name().c_str());
-        }
+       
         statements.push_back(statement);
         
         // If this statement is a section, look for its parent in the surrounding blocks
@@ -343,8 +339,7 @@ if (type == SectionType::INTERFACES) {
     // Reset mikrotik_path to just "/interface" without any dashes
     mikrotik_path = "/interface";
     
-    printf("DEBUG: Processing interfaces section with %zu statement(s)\n", 
-           block ? block->get_statements().size() : 0);
+
     
     std::stringstream nested_commands;
         
@@ -353,24 +348,20 @@ if (type == SectionType::INTERFACES) {
             for (const auto* stmt : block->get_statements()) {
                 // Check if this is a subsection (like "ether1:")
                 if (const auto* sub_section = dynamic_cast<const SectionStatement*>(stmt)) {
-                    printf("DEBUG: Found subsection with name='%s'\n", sub_section->get_name().c_str());
-
+           
                     // Get the interface name (e.g., "ether1" from "ether1:")
                     std::string interface_name = sub_section->get_name();
                     
-                    // Debug output
-                    printf("DEBUG: Interface name before processing: '%s'\n", interface_name.c_str());
-                    
+                 
                     // Remove trailing colon if present
                     if (!interface_name.empty() && interface_name.back() == ':') {
                         interface_name = interface_name.substr(0, interface_name.size() - 1);
-                        printf("DEBUG: Interface name after removing colon: '%s'\n", interface_name.c_str());
+                      
                     }
                     
                     // Ensure interface name is valid (not just a colon)
                     if (interface_name.empty()) {
-                        printf("ERROR: Empty interface name found, section name='%s'\n", sub_section->get_name().c_str());
-                        continue; // Skip invalid interface names
+                       continue;
                     }
                     
                     // Variables to store interface properties
@@ -434,10 +425,7 @@ if (type == SectionType::INTERFACES) {
                                                     sub_nested_commands << "/ip address add address=" 
                                                                       << ip_value << " interface=" 
                                                                       << interface_name << "\n";
-                                                    
-                                                    // Debug output
-                                                    printf("DEBUG: Generated IP command: '/ip address add address=%s interface=%s'\n",
-                                                           ip_value.c_str(), interface_name.c_str());
+                                                 
                                                 }
                                             }
                                         }
@@ -460,9 +448,7 @@ if (type == SectionType::INTERFACES) {
                     if (interface_type == "ethernet") {
                         command = "set";
                         
-                        // Debug output
-                        printf("DEBUG: Constructing interface command with type='%s', command='%s', name='%s'\n", 
-                               interface_type.c_str(), command.c_str(), interface_name.c_str());
+
                         
                         // Directly generate the interface command with the proper path
                         nested_commands << "/interface " << interface_type << " " << command << " " 
@@ -474,10 +460,7 @@ if (type == SectionType::INTERFACES) {
                         }
                         
                         nested_commands << "\n";
-                        
-                        // Debug output the generated command
-                        printf("DEBUG: Generated interface command: '/interface %s %s %s...'\n", 
-                               interface_type.c_str(), command.c_str(), interface_name.c_str());
+
                     }
                     else {
                         // For other interface types, use 'add' with name as a parameter

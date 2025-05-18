@@ -126,7 +126,7 @@ config
     | config TOKEN_DEDENT {
         // Handle dedents at the end of the file
         $$ = parser_result;
-        fprintf(stderr, "DEBUG: Handling dedent at end of file\n");
+
     }
     | config section {
         if ($2 != nullptr) {
@@ -145,8 +145,6 @@ section
     : section_name TOKEN_COLON indented_block {
         SectionStatement::SectionType type = get_section_type($1);
         $$ = SectionFactory::create_section($1, type, $3);
-        fprintf(stderr, "DEBUG: Created main section '%s' with %d statements in its block\n", 
-                $1, $3->get_statements().size());
     }
     ;
 
@@ -177,13 +175,10 @@ indented_block
     }
     | TOKEN_NEWLINE TOKEN_INDENT statement_list TOKEN_DEDENT {
         $$ = $3;
-        fprintf(stderr, "DEBUG: Created indented block with %d statements\n", 
-                $$->get_statements().size());
     }
     | TOKEN_NEWLINE TOKEN_INDENT TOKEN_DEDENT {
         /* Empty block with just indentation and dedentation */
         $$ = new BlockStatement();
-        fprintf(stderr, "DEBUG: Created empty indented block\n");
     }
     ;
 
@@ -192,7 +187,6 @@ statement_list
         $$ = new BlockStatement();
         if ($1 != nullptr) {
             $$->add_statement($1);
-            fprintf(stderr, "DEBUG: Created new block with first statement\n");
         }
     }
     | statement_list TOKEN_NEWLINE {
@@ -203,16 +197,12 @@ statement_list
         $$ = $1;
         if ($2 != nullptr) {
             $$->add_statement($2);
-            fprintf(stderr, "DEBUG: Added statement to parent block, now has %d statements\n", 
-                    $$->get_statements().size());
         }
     }
     | statement_list TOKEN_NEWLINE statement {
         $$ = $1;
         if ($3 != nullptr) {
             $$->add_statement($3);
-            fprintf(stderr, "DEBUG: Added statement after newline to parent block, now has %d statements\n", 
-                    $$->get_statements().size());
         }
     }
     ;
@@ -220,7 +210,6 @@ statement_list
 statement
     : property_name TOKEN_EQUALS value {
         $$ = new PropertyStatement($1, static_cast<Value*>($3));
-        fprintf(stderr, "DEBUG: Adding property statement with name '%s' to block\n", $1);
     }
     | subsection {
         $$ = $1;
@@ -244,10 +233,9 @@ statement
 
 subsection
     : identifier TOKEN_COLON indented_block {
-        fprintf(stderr, "DEBUG: PARSER Creating subsection with identifier '%s'\n", $1);
+ 
         SectionStatement* section = SectionFactory::create_section($1, SectionStatement::SectionType::CUSTOM, $3);
-        fprintf(stderr, "DEBUG: Created subsection '%s' with %d statements in its block\n", 
-                $1, $3->get_statements().size());
+
         $$ = section;
     }
     ;
@@ -285,7 +273,7 @@ property_name
 identifier
     : TOKEN_IDENTIFIER { 
         $$ = $1; // Use the value passed from the scanner ($1) instead of yytext
-        fprintf(stderr, "DEBUG: PARSER Identified identifier: '%s'\n", $1);
+      
     }
     | TOKEN_ETHERNET { $$ = "ethernet"; }
     | TOKEN_VLAN { $$ = "vlan"; }

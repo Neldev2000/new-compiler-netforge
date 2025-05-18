@@ -78,14 +78,9 @@ protected:
 };
 
 // System section
-class SystemSection : public SpecializedSection {
+class SystemSection : public DeviceSection {
 public:
     SystemSection(std::string_view name) noexcept;
-    
-    bool validate() const noexcept override;
-    
-protected:
-    std::string translate_section(const std::string& ident) const override;
 };
 
 // Custom section
