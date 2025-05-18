@@ -334,7 +334,7 @@ std::string DeclarationStatement::to_mikrotik(const std::string& ident) const
     return declaration ? declaration->to_mikrotik(ident) : ident + "# null declaration\n";
 } 
 
-  static std::string determine_action(SectionType type, const std::string& section_name) {
+std::string SectionStatement::determine_action(SectionType type, const std::string& section_name) {
       // Usar sección system
       if (type == SectionType::SYSTEM) {
           if (section_name == "identity" || section_name == "clock" || section_name == "ntp client") {

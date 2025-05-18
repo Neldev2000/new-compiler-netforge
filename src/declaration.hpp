@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 #include <algorithm>
-
+#include <set>
 
 #include "ast_node_interface.hpp"
 #include "statement.hpp"
@@ -38,6 +38,9 @@ public:
     std::string to_mikrotik(const std::string& ident) const override;
     
 private:
+    // Helper method to determine action based on path and config name
+    std::string determine_action(const std::string& menu_path) const;
+    
     StatementList statements;
 };
 

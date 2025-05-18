@@ -33,8 +33,8 @@ std::string Datatype::to_string() const
 
 std::string Datatype::to_mikrotik(const std::string& ident) const 
 {
-    // Default implementation returns the type name as a comment
-    return ident + "# " + type_name();
+    // Return empty string for base type - implementations should override
+    return "";
 }
 
 // BasicDatatype implementation
@@ -47,8 +47,8 @@ void BasicDatatype::destroy() noexcept
 
 std::string BasicDatatype::to_mikrotik(const std::string& ident) const 
 {
-    // Basic implementation returns the type name
-    return Datatype::to_mikrotik(ident);
+    // Return empty string by default
+    return "";
 }
 
 // StringDatatype implementation
@@ -57,7 +57,7 @@ StringDatatype::StringDatatype() noexcept : BasicDatatype(Type::STRING) {}
 std::string StringDatatype::to_mikrotik(const std::string& ident) const 
 {
     // In MikroTik scripting, strings are enclosed in double quotes
-    return ident + "\"\""; // Empty string representation
+    return "\"\""; // Empty string representation
 }
 
 // NumberDatatype implementation
@@ -66,7 +66,7 @@ NumberDatatype::NumberDatatype() noexcept : BasicDatatype(Type::NUMBER) {}
 std::string NumberDatatype::to_mikrotik(const std::string& ident) const 
 {
     // Numbers in MikroTik are represented directly
-    return ident + "0"; // Default number representation
+    return "0"; // Default number representation
 }
 
 // BooleanDatatype implementation
@@ -75,7 +75,7 @@ BooleanDatatype::BooleanDatatype() noexcept : BasicDatatype(Type::BOOLEAN) {}
 std::string BooleanDatatype::to_mikrotik(const std::string& ident) const 
 {
     // Booleans in MikroTik are represented as true/false
-    return ident + "false"; // Default boolean representation
+    return "false"; // Default boolean representation
 }
 
 // IPAddressDatatype implementation
@@ -84,7 +84,7 @@ IPAddressDatatype::IPAddressDatatype() noexcept : BasicDatatype(Type::IP_ADDRESS
 std::string IPAddressDatatype::to_mikrotik(const std::string& ident) const 
 {
     // IP addresses are represented as strings in MikroTik
-    return ident + "\"0.0.0.0\""; // Default IP address representation
+    return "\"0.0.0.0\""; // Default IP address representation
 }
 
 // IPCIDRDatatype implementation
@@ -93,7 +93,7 @@ IPCIDRDatatype::IPCIDRDatatype() noexcept : BasicDatatype(Type::IP_CIDR) {}
 std::string IPCIDRDatatype::to_mikrotik(const std::string& ident) const 
 {
     // CIDR notation in MikroTik is represented as strings
-    return ident + "\"0.0.0.0/0\""; // Default CIDR representation
+    return "\"0.0.0.0/0\""; // Default CIDR representation
 }
 
 // ConfigSectionDatatype implementation
@@ -106,7 +106,7 @@ std::string ConfigSectionDatatype::type_name() const {
 std::string ConfigSectionDatatype::to_mikrotik(const std::string& ident) const 
 {
     // Config sections in MikroTik are typically represented as paths
-    return ident + "\"/\""; // Root path representation
+    return "\"/\""; // Root path representation
 }
 
 // InterfaceDatatype implementation
@@ -119,7 +119,7 @@ std::string InterfaceDatatype::type_name() const {
 std::string InterfaceDatatype::to_mikrotik(const std::string& ident) const 
 {
     // Interfaces in MikroTik are typically represented by their names
-    return ident + "\"interface\""; // Generic interface representation
+    return "\"interface\""; // Generic interface representation
 }
 
 // ListDatatype implementation
@@ -143,10 +143,5 @@ Datatype* ListDatatype::get_element_type() const noexcept
 std::string ListDatatype::to_mikrotik(const std::string& ident) const 
 {
     // In MikroTik, arrays are represented using curly braces
-    if (element_type) {
-        // Return an empty array with type comment
-        return ident + "{} # Array of " + element_type->type_name();
-    } else {
-        return ident + "{}"; // Empty array representation
-    }
+    return "{}"; // Empty array representation
 } 
