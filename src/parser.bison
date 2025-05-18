@@ -7,6 +7,7 @@
 #include "declaration.hpp"
 #include "expression.hpp"
 #include "statement.hpp"
+#include "section_factory.hpp"
 
 extern int yylex();
 extern char* yytext;
@@ -117,7 +118,8 @@ section_list
 
 section
     : section_name TOKEN_COLON block {
-        $$ = new SectionStatement($1, get_section_type($1), $3);
+        SectionStatement::SectionType type = get_section_type($1);
+        $$ = SectionFactory::create_section($1, type, $3);
     }
     ;
 
@@ -162,7 +164,7 @@ statement
         $$ = new PropertyStatement($1, static_cast<Value*>($3));
     }
     | identifier TOKEN_COLON block {
-        $$ = new SectionStatement($1, SectionStatement::SectionType::CUSTOM, $3);
+        $$ = SectionFactory::create_section($1, SectionStatement::SectionType::CUSTOM, $3);
     }
     | TOKEN_SEMICOLON {
         yyerror("Semicolons are not allowed in this DSL");

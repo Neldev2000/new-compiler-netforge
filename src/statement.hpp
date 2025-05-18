@@ -84,7 +84,7 @@ public:
     std::string to_string() const override;
     std::string to_mikrotik(const std::string& ident) const override;
     
-private:
+protected:
     std::string name;
     SectionType type;
     BlockStatement* block;
