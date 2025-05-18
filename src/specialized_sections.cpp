@@ -508,32 +508,298 @@ bool IPSection::validate() const noexcept {
 }
 
 std::string IPSection::translate_section(const std::string& ident) const {
-    std::string result = "# IP Configuration: " + get_name() + "\n";
+    std::string result = ident + "# IP Configuration: " + get_name() + "\n";
     
     if (get_block()) {
         const BlockStatement* block = get_block();
         
-        // Process each interface section within the IP section
+        // Process each statement in the IP section
         for (const auto* stmt : block->get_statements()) {
-            // Each statement should be a section representing an interface
-            if (const auto* interface_section = dynamic_cast<const SectionStatement*>(stmt)) {
-                // Get the interface name
-                std::string interface_name = interface_section->get_name();
+            // Check if this is a section (interface, route, firewall, etc.)
+            if (const auto* subsection = dynamic_cast<const SectionStatement*>(stmt)) {
+                std::string subsection_name = subsection->get_name();
                 
-                // Process the IP configuration for this interface
-                if (interface_section->get_block()) {
-                    for (const auto* ip_stmt : interface_section->get_block()->get_statements()) {
-                        if (const auto* ip_prop = dynamic_cast<const PropertyStatement*>(ip_stmt)) {
-                            if (ip_prop->get_name() == "address" && ip_prop->get_value()) {
-                                std::string ip_value = ip_prop->get_value()->to_mikrotik("");
-                                // Remove quotes if present
-                                if (ip_value.size() >= 2 && ip_value.front() == '"' && ip_value.back() == '"') {
-                                    ip_value = ip_value.substr(1, ip_value.size() - 2);
+                // Handle different IP subsections based on name
+                if (subsection_name == "route" || subsection_name == "routes") {
+                    // Handle IP routes
+                    if (subsection->get_block()) {
+                        for (const auto* route_stmt : subsection->get_block()->get_statements()) {
+                            if (const auto* route_prop = dynamic_cast<const PropertyStatement*>(route_stmt)) {
+                                if (route_prop->get_name() == "default" && route_prop->get_value()) {
+                                    // Default route
+                                    std::string gateway = route_prop->get_value()->to_mikrotik("");
+                                    // Remove quotes if present
+                                    if (gateway.size() >= 2 && gateway.front() == '"' && gateway.back() == '"') {
+                                        gateway = gateway.substr(1, gateway.size() - 2);
+                                    }
+                                    result += "/ip route add dst-address=0.0.0.0/0 gateway=" + gateway + "\n";
+                                }
+                            } else if (const auto* route_section = dynamic_cast<const SectionStatement*>(route_stmt)) {
+                                // Handle specific route entries
+                                std::string dst_address = route_section->get_name();
+                                std::string gateway = "";
+                                std::string distance = "";
+                                
+                                if (route_section->get_block()) {
+                                    for (const auto* route_detail : route_section->get_block()->get_statements()) {
+                                        if (const auto* detail_prop = dynamic_cast<const PropertyStatement*>(route_detail)) {
+                                            if (detail_prop->get_name() == "gateway" && detail_prop->get_value()) {
+                                                gateway = detail_prop->get_value()->to_mikrotik("");
+                                                // Remove quotes if present
+                                                if (gateway.size() >= 2 && gateway.front() == '"' && gateway.back() == '"') {
+                                                    gateway = gateway.substr(1, gateway.size() - 2);
+                                                }
+                                            } else if (detail_prop->get_name() == "distance" && detail_prop->get_value()) {
+                                                distance = detail_prop->get_value()->to_mikrotik("");
+                                            }
+                                        }
+                                    }
                                 }
                                 
-                                // Generate /ip address add command
-                                result +=  "/ip address add address=" + ip_value + 
-                                          " interface=" + interface_name + "\n";
+                                if (!gateway.empty()) {
+                                    result += "/ip route add dst-address=" + dst_address;
+                                    result += " gateway=" + gateway;
+                                    if (!distance.empty()) {
+                                        result += " distance=" + distance;
+                                    }
+                                    result += "\n";
+                                }
+                            }
+                        }
+                    }
+                } else if (subsection_name == "firewall") {
+                    // Handle firewall rules
+                    if (subsection->get_block()) {
+                        for (const auto* fw_stmt : subsection->get_block()->get_statements()) {
+                            if (const auto* fw_section = dynamic_cast<const SectionStatement*>(fw_stmt)) {
+                                std::string chain_name = fw_section->get_name();
+                                
+                                // Process filter or nat chains
+                                if (chain_name == "filter" || chain_name == "nat") {
+                                    if (fw_section->get_block()) {
+                                        for (const auto* rule_stmt : fw_section->get_block()->get_statements()) {
+                                            if (const auto* rule_section = dynamic_cast<const SectionStatement*>(rule_stmt)) {
+                                                std::string rule_chain = rule_section->get_name();
+                                                std::string action = "";
+                                                std::string protocol = "";
+                                                std::string dst_port = "";
+                                                std::string dst_address = "";
+                                                std::string src_address = "";
+                                                std::string out_interface = "";
+                                                std::string in_interface = "";
+                                                
+                                                if (rule_section->get_block()) {
+                                                    for (const auto* rule_prop : rule_section->get_block()->get_statements()) {
+                                                        if (const auto* prop = dynamic_cast<const PropertyStatement*>(rule_prop)) {
+                                                            std::string prop_name = prop->get_name();
+                                                            std::string value = "";
+                                                            if (prop->get_value()) {
+                                                                value = prop->get_value()->to_mikrotik("");
+                                                                // Remove quotes if present
+                                                                if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+                                                                    value = value.substr(1, value.size() - 2);
+                                                                }
+                                                            }
+                                                            
+                                                            if (prop_name == "action") action = value;
+                                                            else if (prop_name == "protocol") protocol = value;
+                                                            else if (prop_name == "dst-port") dst_port = value;
+                                                            else if (prop_name == "dst-address") dst_address = value;
+                                                            else if (prop_name == "src-address") src_address = value;
+                                                            else if (prop_name == "out-interface") out_interface = value;
+                                                            else if (prop_name == "in-interface") in_interface = value;
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                // Generate firewall rule
+                                                if (!action.empty()) {
+                                                    result += "/ip firewall " + chain_name + " add chain=" + rule_chain;
+                                                    result += " action=" + action;
+                                                    if (!protocol.empty()) result += " protocol=" + protocol;
+                                                    if (!dst_port.empty()) result += " dst-port=" + dst_port;
+                                                    if (!dst_address.empty()) result += " dst-address=" + dst_address;
+                                                    if (!src_address.empty()) result += " src-address=" + src_address;
+                                                    if (!out_interface.empty()) result += " out-interface=" + out_interface;
+                                                    if (!in_interface.empty()) result += " in-interface=" + in_interface;
+                                                    result += "\n";
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (subsection_name == "dhcp-server") {
+                    // Handle DHCP server configuration
+                    if (subsection->get_block()) {
+                        for (const auto* dhcp_stmt : subsection->get_block()->get_statements()) {
+                            if (const auto* dhcp_section = dynamic_cast<const SectionStatement*>(dhcp_stmt)) {
+                                std::string dhcp_name = dhcp_section->get_name();
+                                std::string interface = "";
+                                std::string address_pool = "";
+                                std::string lease_time = "";
+                                
+                                if (dhcp_section->get_block()) {
+                                    for (const auto* dhcp_prop : dhcp_section->get_block()->get_statements()) {
+                                        if (const auto* prop = dynamic_cast<const PropertyStatement*>(dhcp_prop)) {
+                                            std::string prop_name = prop->get_name();
+                                            std::string value = "";
+                                            if (prop->get_value()) {
+                                                value = prop->get_value()->to_mikrotik("");
+                                                // Remove quotes if present
+                                                if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+                                                    value = value.substr(1, value.size() - 2);
+                                                }
+                                            }
+                                            
+                                            if (prop_name == "interface") interface = value;
+                                            else if (prop_name == "address-pool") address_pool = value;
+                                            else if (prop_name == "lease-time") lease_time = value;
+                                        }
+                                    }
+                                }
+                                
+                                // Generate DHCP server
+                                if (!interface.empty()) {
+                                    result += "/ip dhcp-server add name=" + dhcp_name;
+                                    result += " interface=" + interface;
+                                    if (!address_pool.empty()) result += " address-pool=" + address_pool;
+                                    if (!lease_time.empty()) result += " lease-time=" + lease_time;
+                                    result += "\n";
+                                }
+                            }
+                        }
+                    }
+                } else if (subsection_name == "dhcp-client") {
+                    // Handle DHCP client configuration
+                    if (subsection->get_block()) {
+                        for (const auto* dhcp_stmt : subsection->get_block()->get_statements()) {
+                            if (const auto* dhcp_prop = dynamic_cast<const PropertyStatement*>(dhcp_stmt)) {
+                                std::string interface = dhcp_prop->get_name();
+                                std::string disabled = "no"; // Enable by default
+                                
+                                if (dhcp_prop->get_value()) {
+                                    std::string value = dhcp_prop->get_value()->to_mikrotik("");
+                                    // Remove quotes if present
+                                    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+                                        value = value.substr(1, value.size() - 2);
+                                    }
+                                    
+                                    if (value == "false" || value == "no") {
+                                        disabled = "yes";
+                                    }
+                                }
+                                
+                                result += "/ip dhcp-client add interface=" + interface;
+                                result += " disabled=" + disabled + "\n";
+                            }
+                        }
+                    }
+                } else if (subsection_name == "dns") {
+                    // Handle DNS configuration
+                    std::string servers = "";
+                    std::string allow_remote = "";
+                    
+                    if (subsection->get_block()) {
+                        for (const auto* dns_prop : subsection->get_block()->get_statements()) {
+                            if (const auto* prop = dynamic_cast<const PropertyStatement*>(dns_prop)) {
+                                std::string prop_name = prop->get_name();
+                                std::string value = "";
+                                if (prop->get_value()) {
+                                    value = prop->get_value()->to_mikrotik("");
+                                    // Remove quotes if present
+                                    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+                                        value = value.substr(1, value.size() - 2);
+                                    }
+                                }
+                                
+                                if (prop_name == "servers") servers = value;
+                                else if (prop_name == "allow-remote-requests") allow_remote = value;
+                            }
+                        }
+                    }
+                    
+                    // Generate DNS configuration
+                    if (!servers.empty() || !allow_remote.empty()) {
+                        result += "/ip dns set";
+                        if (!servers.empty()) result += " servers=" + servers;
+                        if (!allow_remote.empty()) result += " allow-remote-requests=" + allow_remote;
+                        result += "\n";
+                    }
+                } else {
+                    // Process as an interface with IP addresses (default case)
+                    std::string interface_name = subsection_name;
+                    
+                    // Process the IP configuration for this interface
+                    if (subsection->get_block()) {
+                        for (const auto* ip_stmt : subsection->get_block()->get_statements()) {
+                            if (const auto* ip_prop = dynamic_cast<const PropertyStatement*>(ip_stmt)) {
+                                if (ip_prop->get_name() == "address" && ip_prop->get_value()) {
+                                    std::string ip_value = ip_prop->get_value()->to_mikrotik("");
+                                    // Remove quotes if present
+                                    if (ip_value.size() >= 2 && ip_value.front() == '"' && ip_value.back() == '"') {
+                                        ip_value = ip_value.substr(1, ip_value.size() - 2);
+                                    }
+                                    
+                                    // Generate /ip address add command
+                                    result += "/ip address add address=" + ip_value + 
+                                              " interface=" + interface_name + "\n";
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (const auto* prop_stmt = dynamic_cast<const PropertyStatement*>(stmt)) {
+                // Handle top-level IP properties (direct properties under the ip: section)
+                // This could be for global IP settings or simple configurations
+                std::string prop_name = prop_stmt->get_name();
+                
+                if (prop_name == "arp") {
+                    // Handle static ARP entries
+                    if (prop_stmt->get_value()) {
+                        // Check if this is a section statement containing ARP entries
+                        const SectionStatement* arp_section = dynamic_cast<const SectionStatement*>(prop_stmt->get_value());
+                        if (arp_section && arp_section->get_block()) {
+                            const BlockStatement* arp_block = arp_section->get_block();
+                            for (const auto* arp_stmt : arp_block->get_statements()) {
+                                if (const auto* arp_prop = dynamic_cast<const PropertyStatement*>(arp_stmt)) {
+                                    std::string ip_address = arp_prop->get_name();
+                                    std::string mac_address = "";
+                                    std::string interface = "";
+                                    
+                                    // Handle the ARP entry properties
+                                    if (arp_prop->get_value()) {
+                                        // Try to get MAC and interface from nested section
+                                        const SectionStatement* mac_section = dynamic_cast<const SectionStatement*>(arp_prop->get_value());
+                                        if (mac_section && mac_section->get_block()) {
+                                            for (const auto* mac_stmt : mac_section->get_block()->get_statements()) {
+                                                if (const auto* mac_prop = dynamic_cast<const PropertyStatement*>(mac_stmt)) {
+                                                    if (mac_prop->get_name() == "mac-address" && mac_prop->get_value()) {
+                                                        mac_address = mac_prop->get_value()->to_mikrotik("");
+                                                    } else if (mac_prop->get_name() == "interface" && mac_prop->get_value()) {
+                                                        interface = mac_prop->get_value()->to_mikrotik("");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    if (!mac_address.empty() && !interface.empty()) {
+                                        // Remove quotes if present
+                                        if (mac_address.size() >= 2 && mac_address.front() == '"' && mac_address.back() == '"') {
+                                            mac_address = mac_address.substr(1, mac_address.size() - 2);
+                                        }
+                                        if (interface.size() >= 2 && interface.front() == '"' && interface.back() == '"') {
+                                            interface = interface.substr(1, interface.size() - 2);
+                                        }
+                                        
+                                        result += "/ip arp add address=" + ip_address;
+                                        result += " mac-address=" + mac_address;
+                                        result += " interface=" + interface + "\n";
+                                    }
+                                }
                             }
                         }
                     }
