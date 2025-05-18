@@ -27,3 +27,21 @@ routing:
     static_route1:
         destination = 172.16.0.0/24
         gateway = 10.0.0.254
+
+# Firewall configuration
+firewall:
+    filter:
+        input_accept_established:
+            chain = input
+            connection_state = ["established", "related"]
+            action = accept
+            
+        input_drop_all:
+            chain = input
+            action = drop
+            
+    nat:
+        srcnat_masquerade:
+            chain = srcnat
+            action = masquerade
+            out_interface = "ether1"

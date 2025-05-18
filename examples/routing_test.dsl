@@ -31,14 +31,14 @@ routing:
     static_route2:
         destination = "10.10.0.0/24"
         gateway = "192.168.1.1"
-        check-gateway = "ping"
+
         distance = "1"
     
     # Route to a specific custom routing table
     static_route3:
         destination = "8.8.8.8/32"
         gateway = "192.168.2.1"
-        routing-table = "ISP2"
+        #routing-table = "ISP2"
     
     # Custom routing tables definition
     tables:
@@ -50,11 +50,11 @@ routing:
     # Routing rules (policy-based routing)
     rules:
         rule1:
-            src-address = "192.168.10.0/24"
+            #src-address = "192.168.10.0/24"
             action = "lookup-only-in-table"
             table = "ISP2"
         rule2:
-            dst-address = "8.8.8.8/32"
+            #dst-address = "8.8.8.8/32"
             action = "lookup-only-in-table"
             table = "ISP2"
     
