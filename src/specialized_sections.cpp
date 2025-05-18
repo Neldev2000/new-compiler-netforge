@@ -830,9 +830,229 @@ std::string RoutingSection::translate_section(const std::string& ident) const {
     std::string result = ident + "# Routing Configuration: " + get_name() + "\n";
     
     if (get_block()) {
-        // Routing-specific translation
-        result += ident + "/routing\n";
-        result += get_block()->to_mikrotik(ident + "  ");
+        const BlockStatement* block = get_block();
+        
+        // Process each statement in the routing section
+        for (const auto* stmt : block->get_statements()) {
+            // Handle properties vs subsections differently
+            if (const auto* prop_stmt = dynamic_cast<const PropertyStatement*>(stmt)) {
+                // Handle properties like default gateway
+                std::string prop_name = prop_stmt->get_name();
+                
+                if (prop_name == "static_route_default_gw" && prop_stmt->get_value()) {
+                    // Default route
+                    std::string gateway = prop_stmt->get_value()->to_mikrotik("");
+                    // Remove quotes if present
+                    if (gateway.size() >= 2 && gateway.front() == '"' && gateway.back() == '"') {
+                        gateway = gateway.substr(1, gateway.size() - 2);
+                    }
+                    
+                    // Generate default route
+                    result += "/ip route add dst-address=0.0.0.0/0 gateway=" + gateway + "\n";
+                }
+            } else if (const auto* route_section = dynamic_cast<const SectionStatement*>(stmt)) {
+                // Handle named route sections (static_route1, etc.)
+                std::string route_name = route_section->get_name();
+                
+                // Extract route properties
+                std::string destination = "";
+                std::string gateway = "";
+                std::string distance = "";
+                std::string routing_table = "";
+                std::string check_gateway = "";
+                std::string scope = "";
+                std::string target_scope = "";
+                bool suppress_hw_offload = false;
+                
+                if (route_section->get_block()) {
+                    for (const auto* route_prop : route_section->get_block()->get_statements()) {
+                        if (const auto* prop = dynamic_cast<const PropertyStatement*>(route_prop)) {
+                            std::string prop_name = prop->get_name();
+                            std::string value = "";
+                            
+                            if (prop->get_value()) {
+                                value = prop->get_value()->to_mikrotik("");
+                                // Remove quotes if present
+                                if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+                                    value = value.substr(1, value.size() - 2);
+                                }
+                            }
+                            
+                            if (prop_name == "destination" || prop_name == "dst-address" || prop_name == "dst") {
+                                destination = value;
+                            } else if (prop_name == "gateway" || prop_name == "gw") {
+                                gateway = value;
+                            } else if (prop_name == "distance") {
+                                distance = value;
+                            } else if (prop_name == "routing-table" || prop_name == "table") {
+                                routing_table = value;
+                            } else if (prop_name == "check-gateway") {
+                                check_gateway = value;
+                            } else if (prop_name == "scope") {
+                                scope = value;
+                            } else if (prop_name == "target-scope") {
+                                target_scope = value;
+                            } else if (prop_name == "suppress-hw-offload") {
+                                suppress_hw_offload = (value == "yes" || value == "true");
+                            }
+                        }
+                    }
+                }
+                
+                // Generate a static route if we have at least a destination and gateway
+                if (!destination.empty() && !gateway.empty()) {
+                    result += "/ip route add dst-address=" + destination;
+                    result += " gateway=" + gateway;
+                    
+                    // Add optional parameters
+                    if (!distance.empty()) {
+                        result += " distance=" + distance;
+                    }
+                    if (!routing_table.empty()) {
+                        result += " routing-table=" + routing_table;
+                    }
+                    if (!check_gateway.empty()) {
+                        result += " check-gateway=" + check_gateway;
+                    }
+                    if (!scope.empty()) {
+                        result += " scope=" + scope;
+                    }
+                    if (!target_scope.empty()) {
+                        result += " target-scope=" + target_scope;
+                    }
+                    if (suppress_hw_offload) {
+                        result += " suppress-hw-offload=yes";
+                    }
+                    
+                    result += "\n";
+                }
+            } else if (const auto* subsection = dynamic_cast<const SectionStatement*>(stmt)) {
+                // Handle specific routing subsections like 'table', 'rule', etc.
+                std::string subsection_name = subsection->get_name();
+                
+                if (subsection_name == "table" || subsection_name == "tables") {
+                    // Handle routing tables
+                    if (subsection->get_block()) {
+                        for (const auto* table_stmt : subsection->get_block()->get_statements()) {
+                            if (const auto* table_section = dynamic_cast<const SectionStatement*>(table_stmt)) {
+                                std::string table_name = table_section->get_name();
+                                bool fib = true; // Default in RouterOS v7
+                                
+                                if (table_section->get_block()) {
+                                    for (const auto* table_prop : table_section->get_block()->get_statements()) {
+                                        if (const auto* prop = dynamic_cast<const PropertyStatement*>(table_prop)) {
+                                            if (prop->get_name() == "fib" && prop->get_value()) {
+                                                std::string value = prop->get_value()->to_mikrotik("");
+                                                if (value == "no" || value == "false") {
+                                                    fib = false;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Generate routing table
+                                result += "/routing table add name=" + table_name;
+                                if (fib) {
+                                    result += " fib";
+                                }
+                                result += "\n";
+                            }
+                        }
+                    }
+                } else if (subsection_name == "rule" || subsection_name == "rules") {
+                    // Handle routing rules
+                    if (subsection->get_block()) {
+                        for (const auto* rule_stmt : subsection->get_block()->get_statements()) {
+                            if (const auto* rule_section = dynamic_cast<const SectionStatement*>(rule_stmt)) {
+                                std::string rule_name = rule_section->get_name();
+                                std::string src_address = "";
+                                std::string dst_address = "";
+                                std::string interface = "";
+                                std::string action = "";
+                                std::string table = "";
+                                
+                                if (rule_section->get_block()) {
+                                    for (const auto* rule_prop : rule_section->get_block()->get_statements()) {
+                                        if (const auto* prop = dynamic_cast<const PropertyStatement*>(rule_prop)) {
+                                            std::string prop_name = prop->get_name();
+                                            std::string value = "";
+                                            
+                                            if (prop->get_value()) {
+                                                value = prop->get_value()->to_mikrotik("");
+                                                // Remove quotes if present
+                                                if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+                                                    value = value.substr(1, value.size() - 2);
+                                                }
+                                            }
+                                            
+                                            if (prop_name == "src-address") {
+                                                src_address = value;
+                                            } else if (prop_name == "dst-address") {
+                                                dst_address = value;
+                                            } else if (prop_name == "interface") {
+                                                interface = value;
+                                            } else if (prop_name == "action") {
+                                                action = value;
+                                            } else if (prop_name == "table") {
+                                                table = value;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Generate routing rule
+                                result += "/routing rule add";
+                                if (!src_address.empty()) {
+                                    result += " src-address=" + src_address;
+                                }
+                                if (!dst_address.empty()) {
+                                    result += " dst-address=" + dst_address;
+                                }
+                                if (!interface.empty()) {
+                                    result += " interface=" + interface;
+                                }
+                                if (!action.empty()) {
+                                    result += " action=" + action;
+                                }
+                                if (!table.empty()) {
+                                    result += " table=" + table;
+                                }
+                                result += "\n";
+                            }
+                        }
+                    }
+                } else if (subsection_name == "filter") {
+                    // Handle routing filters for v7
+                    if (subsection->get_block()) {
+                        for (const auto* filter_stmt : subsection->get_block()->get_statements()) {
+                            if (const auto* filter_section = dynamic_cast<const SectionStatement*>(filter_stmt)) {
+                                std::string chain_name = filter_section->get_name();
+                                std::string rule = "";
+                                
+                                if (filter_section->get_block()) {
+                                    for (const auto* filter_prop : filter_section->get_block()->get_statements()) {
+                                        if (const auto* prop = dynamic_cast<const PropertyStatement*>(filter_prop)) {
+                                            if (prop->get_name() == "rule" && prop->get_value()) {
+                                                rule = prop->get_value()->to_mikrotik("");
+                                                // Remove quotes if present
+                                                if (rule.size() >= 2 && rule.front() == '"' && rule.back() == '"') {
+                                                    rule = rule.substr(1, rule.size() - 2);
+                                                }
+                                                
+                                                // Generate routing filter rule
+                                                result += "/routing/filter/rule add chain=" + chain_name;
+                                                result += " rule=\"" + rule + "\"\n";
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     return result;

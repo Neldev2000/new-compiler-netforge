@@ -20,3 +20,10 @@ ip:
         address = 192.168.1.1/24
     ether1:
         address = 10.0.0.1/24
+
+# Routing configuration
+routing:
+    static_route_default_gw = 192.168.1.254
+    static_route1:
+        destination = 172.16.0.0/24
+        gateway = 10.0.0.254
