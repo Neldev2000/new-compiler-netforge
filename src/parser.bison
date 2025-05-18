@@ -73,6 +73,8 @@ SectionStatement::SectionType get_section_type(const char* section_name) {
 %token TOKEN_INPUT TOKEN_OUTPUT TOKEN_FORWARD TOKEN_SRCNAT
 %token TOKEN_MASQUERADE TOKEN_ENABLED TOKEN_DISABLED
 %token TOKEN_ACCEPT TOKEN_DROP TOKEN_REJECT
+%token TOKEN_OUT_INTERFACE TOKEN_IN_INTERFACE TOKEN_SRC_ADDRESS TOKEN_DST_ADDRESS
+%token TOKEN_SRC_PORT TOKEN_DST_PORT TOKEN_TO_ADDRESSES TOKEN_TO_PORTS
 
 /* Literal tokens */
 %token <str_val> TOKEN_IDENTIFIER TOKEN_STRING TOKEN_BOOL
@@ -269,6 +271,14 @@ property_name
     | TOKEN_INTERFACE { $$ = "interface"; }
     | TOKEN_DESTINATION { $$ = "destination"; }
     | TOKEN_GATEWAY { $$ = "gateway"; }
+    | TOKEN_OUT_INTERFACE { $$ = "out_interface"; }
+    | TOKEN_IN_INTERFACE { $$ = "in_interface"; }
+    | TOKEN_SRC_ADDRESS { $$ = "src_address"; }
+    | TOKEN_DST_ADDRESS { $$ = "dst_address"; }
+    | TOKEN_SRC_PORT { $$ = "src_port"; }
+    | TOKEN_DST_PORT { $$ = "dst_port"; }
+    | TOKEN_TO_ADDRESSES { $$ = "to_addresses"; }
+    | TOKEN_TO_PORTS { $$ = "to_ports"; }
     ;
 
 /* Generic identifier for tokens that can appear before colon */

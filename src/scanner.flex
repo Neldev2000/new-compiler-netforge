@@ -253,6 +253,22 @@ IPV6_RANGE      {IPV6_ADDRESS}\-{IPV6_ADDRESS}
 "accept"        { return TOKEN_ACCEPT; }
 "drop"          { return TOKEN_DROP; }
 "reject"        { return TOKEN_REJECT; }
+"out_interface" { return TOKEN_OUT_INTERFACE; }
+"out-interface" { return TOKEN_OUT_INTERFACE; }
+"in_interface"  { return TOKEN_IN_INTERFACE; }
+"in-interface"  { return TOKEN_IN_INTERFACE; }
+"src_address"   { return TOKEN_SRC_ADDRESS; }
+"src-address"   { return TOKEN_SRC_ADDRESS; }
+"dst_address"   { return TOKEN_DST_ADDRESS; }
+"dst-address"   { return TOKEN_DST_ADDRESS; }
+"src_port"      { return TOKEN_SRC_PORT; }
+"src-port"      { return TOKEN_SRC_PORT; }
+"dst_port"      { return TOKEN_DST_PORT; }
+"dst-port"      { return TOKEN_DST_PORT; }
+"to_addresses"  { return TOKEN_TO_ADDRESSES; }
+"to-addresses"  { return TOKEN_TO_ADDRESSES; }
+"to_ports"      { return TOKEN_TO_PORTS; }
+"to-ports"      { return TOKEN_TO_PORTS; }
 
 {IPV6_CIDR}     { yylval.str_val = strdup(yytext); return TOKEN_IPV6_CIDR; }
 {IPV6_RANGE}    { yylval.str_val = strdup(yytext); return TOKEN_IPV6_RANGE; }
