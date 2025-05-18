@@ -38,6 +38,10 @@ public:
     
 protected:
     std::string translate_section(const std::string& ident) const override;
+    
+private:
+    // Helper method to process a single interface section
+    std::string process_interface_section(const SectionStatement* section, const std::string& interface_name) const;
 };
 
 // IP section

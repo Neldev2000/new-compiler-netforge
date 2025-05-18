@@ -9,11 +9,16 @@
 #include "statement.hpp"
 #include "section_factory.hpp"
 
-extern int yylex();
+extern int yylex();  // Use standard yylex - it will internally handle our token queue
 extern char* yytext;
 extern int line_number;
+extern int column_number; // Track indentation
 extern FILE* yyin;
 int yyerror(const char* s);
+
+// Extern declarations for scanner globals
+extern std::vector<int> indent_stack;
+extern std::vector<int> token_queue;
 
 // Global result for the parser
 ProgramDeclaration* parser_result = nullptr;
@@ -47,6 +52,7 @@ SectionStatement::SectionType get_section_type(const char* section_name) {
     Value* value_val;
     ListValue* list_val;
     ProgramDeclaration* program_val;
+    int indent_val;
 }
 
 /* Tokens from flex scanner */
@@ -54,6 +60,7 @@ SectionStatement::SectionType get_section_type(const char* section_name) {
 %token TOKEN_LEFT_BRACE TOKEN_RIGHT_BRACE TOKEN_COMMA TOKEN_SLASH
 %token TOKEN_MINUS TOKEN_DOT
 %token TOKEN_SEMICOLON
+%token TOKEN_INDENT TOKEN_DEDENT TOKEN_NEWLINE   /* Indentation tokens */
 
 /* Keyword tokens */
 %token TOKEN_DEVICE TOKEN_VENDOR TOKEN_MODEL TOKEN_INTERFACES TOKEN_IP TOKEN_ROUTING
@@ -80,8 +87,8 @@ SectionStatement::SectionType get_section_type(const char* section_name) {
 %type <str_val> property_name section_name identifier
 %type <program_val> config
 %type <section_val> section section_list
-%type <block_val> block statement_list
-%type <stmt_val> statement
+%type <block_val> block statement_list indented_block
+%type <stmt_val> statement subsection
 %type <value_val> simple_value value_item
 %type <list_val> list_value
 %type <expr_val> value
@@ -104,6 +111,21 @@ config
         }
         $$ = parser_result;
     }
+    | config TOKEN_NEWLINE section {
+        if ($3 != nullptr) {
+            parser_result->add_section($3);
+        }
+        $$ = parser_result;
+    }
+    | config TOKEN_NEWLINE {
+        // Allow trailing newlines in a config
+        $$ = parser_result;
+    }
+    | config TOKEN_DEDENT {
+        // Handle dedents at the end of the file
+        $$ = parser_result;
+        fprintf(stderr, "DEBUG: Handling dedent at end of file\n");
+    }
     | config section {
         if ($2 != nullptr) {
             parser_result->add_section($2);
@@ -114,12 +136,15 @@ config
 
 section_list
     : section { $$ = $1; }
+    | TOKEN_NEWLINE section { $$ = $2; }
     ;
 
 section
-    : section_name TOKEN_COLON block {
+    : section_name TOKEN_COLON indented_block {
         SectionStatement::SectionType type = get_section_type($1);
         $$ = SectionFactory::create_section($1, type, $3);
+        fprintf(stderr, "DEBUG: Created main section '%s' with %d statements in its block\n", 
+                $1, $3->get_statements().size());
     }
     ;
 
@@ -144,17 +169,48 @@ block
     }
     ;
 
+indented_block
+    : /* empty */ {
+        $$ = new BlockStatement();
+    }
+    | TOKEN_NEWLINE TOKEN_INDENT statement_list TOKEN_DEDENT {
+        $$ = $3;
+        fprintf(stderr, "DEBUG: Created indented block with %d statements\n", 
+                $$->get_statements().size());
+    }
+    | TOKEN_NEWLINE TOKEN_INDENT TOKEN_DEDENT {
+        /* Empty block with just indentation and dedentation */
+        $$ = new BlockStatement();
+        fprintf(stderr, "DEBUG: Created empty indented block\n");
+    }
+    ;
+
 statement_list
     : statement {
         $$ = new BlockStatement();
         if ($1 != nullptr) {
             $$->add_statement($1);
+            fprintf(stderr, "DEBUG: Created new block with first statement\n");
         }
+    }
+    | statement_list TOKEN_NEWLINE {
+        /* Allow trailing newlines in a block without requiring a statement */
+        $$ = $1;
     }
     | statement_list statement {
         $$ = $1;
         if ($2 != nullptr) {
             $$->add_statement($2);
+            fprintf(stderr, "DEBUG: Added statement to parent block, now has %d statements\n", 
+                    $$->get_statements().size());
+        }
+    }
+    | statement_list TOKEN_NEWLINE statement {
+        $$ = $1;
+        if ($3 != nullptr) {
+            $$->add_statement($3);
+            fprintf(stderr, "DEBUG: Added statement after newline to parent block, now has %d statements\n", 
+                    $$->get_statements().size());
         }
     }
     ;
@@ -162,10 +218,10 @@ statement_list
 statement
     : property_name TOKEN_EQUALS value {
         $$ = new PropertyStatement($1, static_cast<Value*>($3));
+        fprintf(stderr, "DEBUG: Adding property statement with name '%s' to block\n", $1);
     }
-    | identifier TOKEN_COLON block {
-        fprintf(stderr, "DEBUG: Creating section with identifier '%s'\n", $1);
-        $$ = SectionFactory::create_section($1, SectionStatement::SectionType::CUSTOM, $3);
+    | subsection {
+        $$ = $1;
     }
     | TOKEN_SEMICOLON {
         yyerror("Semicolons are not allowed in this DSL");
@@ -181,6 +237,16 @@ statement
         yyerror("Invalid syntax");
         YYERROR;
         $$ = nullptr;
+    }
+    ;
+
+subsection
+    : identifier TOKEN_COLON indented_block {
+        fprintf(stderr, "DEBUG: PARSER Creating subsection with identifier '%s'\n", $1);
+        SectionStatement* section = SectionFactory::create_section($1, SectionStatement::SectionType::CUSTOM, $3);
+        fprintf(stderr, "DEBUG: Created subsection '%s' with %d statements in its block\n", 
+                $1, $3->get_statements().size());
+        $$ = section;
     }
     ;
 
