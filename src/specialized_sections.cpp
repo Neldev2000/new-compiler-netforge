@@ -508,12 +508,38 @@ bool IPSection::validate() const noexcept {
 }
 
 std::string IPSection::translate_section(const std::string& ident) const {
-    std::string result = ident + "# IP Configuration: " + get_name() + "\n";
+    std::string result = "# IP Configuration: " + get_name() + "\n";
     
     if (get_block()) {
-        // IP-specific translation
-        result += ident + "/ip\n";
-        result += get_block()->to_mikrotik(ident + "  ");
+        const BlockStatement* block = get_block();
+        
+        // Process each interface section within the IP section
+        for (const auto* stmt : block->get_statements()) {
+            // Each statement should be a section representing an interface
+            if (const auto* interface_section = dynamic_cast<const SectionStatement*>(stmt)) {
+                // Get the interface name
+                std::string interface_name = interface_section->get_name();
+                
+                // Process the IP configuration for this interface
+                if (interface_section->get_block()) {
+                    for (const auto* ip_stmt : interface_section->get_block()->get_statements()) {
+                        if (const auto* ip_prop = dynamic_cast<const PropertyStatement*>(ip_stmt)) {
+                            if (ip_prop->get_name() == "address" && ip_prop->get_value()) {
+                                std::string ip_value = ip_prop->get_value()->to_mikrotik("");
+                                // Remove quotes if present
+                                if (ip_value.size() >= 2 && ip_value.front() == '"' && ip_value.back() == '"') {
+                                    ip_value = ip_value.substr(1, ip_value.size() - 2);
+                                }
+                                
+                                // Generate /ip address add command
+                                result +=  "/ip address add address=" + ip_value + 
+                                          " interface=" + interface_name + "\n";
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     return result;
