@@ -2,13 +2,15 @@
 
 #include "statement.hpp"
 #include <map>
+#include <tuple>
+
 // Base class for all specialized sections
 class SpecializedSection : public SectionStatement {
 public:
     SpecializedSection(std::string_view name) noexcept;
     
-    // Add semantic validation method
-    virtual bool validate() const noexcept = 0;
+    // Add semantic validation method with error message
+    virtual std::tuple<bool, std::string> validate() const noexcept = 0;
     
     // Override the to_mikrotik method for specialized translation
     std::string to_mikrotik(const std::string& ident) const override;
@@ -23,7 +25,7 @@ class DeviceSection : public SpecializedSection {
 public:
     DeviceSection(std::string_view name) noexcept;
     
-    bool validate() const noexcept override;
+    std::tuple<bool, std::string> validate() const noexcept override;
     
 protected:
     std::string translate_section(const std::string& ident) const override;
@@ -34,7 +36,7 @@ class InterfacesSection : public SpecializedSection {
 public:
     InterfacesSection(std::string_view name) noexcept;
     
-    bool validate() const noexcept override;
+    std::tuple<bool, std::string> validate() const noexcept override;
     
 protected:
     std::string translate_section(const std::string& ident) const override;
@@ -49,7 +51,7 @@ class IPSection : public SpecializedSection {
 public:
     IPSection(std::string_view name) noexcept;
     
-    bool validate() const noexcept override;
+    std::tuple<bool, std::string> validate() const noexcept override;
     
 protected:
     std::string translate_section(const std::string& ident) const override;
@@ -60,7 +62,7 @@ class RoutingSection : public SpecializedSection {
 public:
     RoutingSection(std::string_view name) noexcept;
     
-    bool validate() const noexcept override;
+    std::tuple<bool, std::string> validate() const noexcept override;
     
 protected:
     std::string translate_section(const std::string& ident) const override;
@@ -71,7 +73,7 @@ class FirewallSection : public SpecializedSection {
 public:
     FirewallSection(std::string_view name) noexcept;
     
-    bool validate() const noexcept override;
+    std::tuple<bool, std::string> validate() const noexcept override;
     
 protected:
     std::string translate_section(const std::string& ident) const override;
@@ -88,7 +90,7 @@ class CustomSection : public SpecializedSection {
 public:
     CustomSection(std::string_view name) noexcept;
     
-    bool validate() const noexcept override;
+    std::tuple<bool, std::string> validate() const noexcept override;
     
 protected:
     std::string translate_section(const std::string& ident) const override;

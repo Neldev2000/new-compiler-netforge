@@ -1,6 +1,7 @@
 #include "specialized_sections.hpp"
 #include <sstream>
 #include <algorithm>
+#include <set>
 
 // SpecializedSection implementation
 SpecializedSection::SpecializedSection(std::string_view name) noexcept
@@ -21,16 +22,17 @@ DeviceSection::DeviceSection(std::string_view name) noexcept
     this->type = SectionType::DEVICE;
 }
 
-bool DeviceSection::validate() const noexcept {
+std::tuple<bool, std::string> DeviceSection::validate() const noexcept {
     // Validate device section - requires vendor, model, and hostname
     const BlockStatement* block = get_block();
-    if (!block) return false;
+    if (!block) 
+        return {false, "Device section is missing a block statement"};
     
     bool has_vendor = false;
     bool has_model = false;
     bool has_hostname = false;
     
-    // Check if required properties exist
+    // Check if required properties exist and ensure no other properties are present
     for (const Statement* stmt : block->get_statements()) {
         const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(stmt);
         if (prop) {
@@ -49,11 +51,27 @@ bool DeviceSection::validate() const noexcept {
                 const StringValue* value = dynamic_cast<const StringValue*>(expr);
                 if (value) has_hostname = true;
             }
+            else {
+                // Invalid property found - only hostname, vendor, and model are allowed
+                return {false, "Device section contains invalid property: " + name + 
+                              ". Only 'hostname', 'vendor', and 'model' are allowed"};
+            }
+        }
+        else {
+            // Non-property statement found in device section
+            return {false, "Device section contains an invalid statement type. Only property statements are allowed"};
         }
     }
     
     // Ensure all required properties are present
-    return has_vendor && has_model && has_hostname;
+    if (!has_vendor) 
+        return {false, "Device section is missing required 'vendor' property"};
+    if (!has_model) 
+        return {false, "Device section is missing required 'model' property"};
+    if (!has_hostname) 
+        return {false, "Device section is missing required 'hostname' property"};
+    
+    return {true, ""};
 }
 
 std::string DeviceSection::translate_section(const std::string& ident) const {
@@ -144,40 +162,101 @@ InterfacesSection::InterfacesSection(std::string_view name) noexcept
 
 }
 
-bool InterfacesSection::validate() const noexcept {
+std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
     const BlockStatement* block = get_block();
-    if (!block) return false;
+    if (!block) return {false, "Interfaces section is missing a block statement"};
+    
+    // Define valid interface properties based on the MikroTik RouterOS documentation
+    const std::set<std::string> common_valid_props = {
+        "name", "type", "mtu", "disabled", "admin_state", "mac_address", "mac", 
+        "comment", "description", "lists", "arp"
+    };
+    
+    const std::set<std::string> vlan_specific_props = {
+        "vlan_id", "interface"
+    };
+    
+    const std::set<std::string> bonding_specific_props = {
+        "mode", "slaves"
+    };
+    
+    const std::set<std::string> bridge_specific_props = {
+        "protocol-mode", "fast-forward", "ports"
+    };
+    
+    const std::set<std::string> ethernet_specific_props = {
+        "advertise", "auto-negotiation", "speed", "duplex"
+    };
     
     bool has_name = false;
     bool has_type = false;
     std::string interface_type = "";
     
-    // Check for required properties
+    // Check for required properties and validate all properties
     for (const Statement* stmt : block->get_statements()) {
         const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(stmt);
+        const SectionStatement* subsection = dynamic_cast<const SectionStatement*>(stmt);
+        
+        // Non-property, non-section statement found (invalid)
+        if (!prop && !subsection) {
+            return {false, "Interface section contains an invalid statement type"};
+        }
+        
+        // Check subsections - only valid if they're interface definitions
+        if (subsection) {
+            // Valid subsections will be checked separately
+            continue;
+        }
+        
+        // Process properties
         if (prop) {
             const std::string& name = prop->get_name();
             Expression* expr = prop->get_value();
             
-            if (name == "name" && expr) {
-                has_name = true;
-            } else if (name == "type" && expr) {
-                has_type = true;
-                
-                const StringValue* type_value = dynamic_cast<const StringValue*>(expr);
-                if (type_value) {
-                    interface_type = type_value->get_value();
-                    // Remove quotes if present
-                    if (interface_type.size() >= 2 && interface_type.front() == '"' && interface_type.back() == '"') {
-                        interface_type = interface_type.substr(1, interface_type.size() - 2);
+            // Check if this is a common valid property
+            if (common_valid_props.find(name) != common_valid_props.end()) {
+                if (name == "name" && expr) {
+                    has_name = true;
+                } else if (name == "type" && expr) {
+                    has_type = true;
+                    
+                    const StringValue* type_value = dynamic_cast<const StringValue*>(expr);
+                    if (type_value) {
+                        interface_type = type_value->get_value();
+                        // Remove quotes if present
+                        if (interface_type.size() >= 2 && interface_type.front() == '"' && interface_type.back() == '"') {
+                            interface_type = interface_type.substr(1, interface_type.size() - 2);
+                        }
                     }
                 }
+            }
+            // Check for VLAN-specific properties
+            else if (interface_type == "vlan" && vlan_specific_props.find(name) != vlan_specific_props.end()) {
+                // Valid VLAN property
+            }
+            // Check for bonding-specific properties
+            else if (interface_type == "bonding" && bonding_specific_props.find(name) != bonding_specific_props.end()) {
+                // Valid bonding property
+            } 
+            // Check for bridge-specific properties
+            else if (interface_type == "bridge" && bridge_specific_props.find(name) != bridge_specific_props.end()) {
+                // Valid bridge property
+            }
+            // Check for ethernet-specific properties
+            else if ((interface_type == "ethernet" || interface_type.empty()) && 
+                     ethernet_specific_props.find(name) != ethernet_specific_props.end()) {
+                // Valid ethernet property
+            }
+            // Invalid property found
+            else {
+                return {false, "Interface section contains invalid property '" + name + 
+                       "'. This property is not valid for interface configuration."};
             }
         }
     }
     
     // All interfaces should have a name
-    if (!has_name) return false;
+    if (!has_name) return {false, "Interface is missing required 'name' property"};
     
     // For VLAN, check if parent interface and VLAN ID exist
     if (interface_type == "vlan") {
@@ -198,7 +277,8 @@ bool InterfacesSection::validate() const noexcept {
             }
         }
         
-        if (!has_vlan_id || !has_parent) return false;
+        if (!has_vlan_id) return {false, "VLAN interface is missing required 'vlan_id' property"};
+        if (!has_parent) return {false, "VLAN interface is missing required 'interface' property"};
     }
     
     // For bonding, check if mode and slaves are set
@@ -220,19 +300,16 @@ bool InterfacesSection::validate() const noexcept {
             }
         }
         
-        if (!has_mode || !has_slaves) return false;
+        if (!has_mode) return {false, "Bonding interface is missing required 'mode' property"};
+        if (!has_slaves) return {false, "Bonding interface is missing required 'slaves' property"};
     }
     
-    return true;
+    return {true, ""};
 }
 
 std::string InterfacesSection::translate_section(const std::string& ident) const {
     std::string result = "# Interface Configuration\n";
-    
-    // TRULY GENERAL SOLUTION: Find and process ALL interface sections in the entire program
-    // We need a reference to the program's top-level sections to access all parsed sections
-    
-    // Process subsections in our block - these are "officially" inside the interfaces: section
+
     if (get_block()) {
         const BlockStatement* block = get_block();
    
@@ -499,12 +576,12 @@ IPSection::IPSection(std::string_view name) noexcept
     this->type = SectionType::IP;
 }
 
-bool IPSection::validate() const noexcept {
+std::tuple<bool, std::string> IPSection::validate() const noexcept {
     const BlockStatement* block = get_block();
-    if (!block) return false;
+    if (!block) return {false, "IP section is missing a block statement"};
     
     // Add specific IP section validation logic here
-    return true;
+    return {true, ""};
 }
 
 std::string IPSection::translate_section(const std::string& ident) const {
@@ -700,25 +777,25 @@ std::string IPSection::translate_section(const std::string& ident) const {
                 } else if (subsection_name == "dns") {
                     // Handle DNS configuration
                     std::string servers = "";
-                                         std::string allow_remote = "";
+                    std::string allow_remote = "";
                      
-                     if (subsection->get_block()) {
-                         for (const auto* dns_prop : subsection->get_block()->get_statements()) {
-                                if (const auto* prop = dynamic_cast<const PropertyStatement*>(dns_prop)) {
-                                    std::string prop_name = prop->get_name();
-                                    std::string value = "";
-                                    if (prop->get_value()) {
-                                        value = prop->get_value()->to_mikrotik("");
-                                        // Remove quotes if present
-                                        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
-                                            value = value.substr(1, value.size() - 2);
-                                        }
+                    if (subsection->get_block()) {
+                        for (const auto* dns_prop : subsection->get_block()->get_statements()) {
+                            if (const auto* prop = dynamic_cast<const PropertyStatement*>(dns_prop)) {
+                                std::string prop_name = prop->get_name();
+                                std::string value = "";
+                                if (prop->get_value()) {
+                                    value = prop->get_value()->to_mikrotik("");
+                                    // Remove quotes if present
+                                    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+                                        value = value.substr(1, value.size() - 2);
                                     }
-                                    
-                                                                                    if (prop_name == "servers") servers = value;
-                                                else if (prop_name == "allow-remote-requests") allow_remote = value;
-                                            }
-                                        }
+                                }
+                                
+                                if (prop_name == "servers") servers = value;
+                                else if (prop_name == "allow-remote-requests") allow_remote = value;
+                            }
+                        }
                     }
                     
                     // Generate DNS configuration
@@ -818,12 +895,12 @@ RoutingSection::RoutingSection(std::string_view name) noexcept
     this->type = SectionType::ROUTING;
 }
 
-bool RoutingSection::validate() const noexcept {
+std::tuple<bool, std::string> RoutingSection::validate() const noexcept {
     const BlockStatement* block = get_block();
-    if (!block) return false;
+    if (!block) return {false, "Routing section is missing a block statement"};
     
     // Add specific routing section validation logic here
-    return true;
+    return {true, ""};
 }
 
 std::string RoutingSection::translate_section(const std::string& ident) const {
@@ -1065,12 +1142,12 @@ FirewallSection::FirewallSection(std::string_view name) noexcept
     this->type = SectionType::FIREWALL;
 }
 
-bool FirewallSection::validate() const noexcept {
+std::tuple<bool, std::string> FirewallSection::validate() const noexcept {
     const BlockStatement* block = get_block();
-    if (!block) return false;
+    if (!block) return {false, "Firewall section is missing a block statement"};
     
     // Add specific firewall section validation logic here
-    return true;
+    return {true, ""};
 }
 
 std::string FirewallSection::translate_section(const std::string& ident) const {
@@ -1469,12 +1546,12 @@ CustomSection::CustomSection(std::string_view name) noexcept
     this->type = SectionType::CUSTOM;
 }
 
-bool CustomSection::validate() const noexcept {
+std::tuple<bool, std::string> CustomSection::validate() const noexcept {
     const BlockStatement* block = get_block();
-    if (!block) return false;
+    if (!block) return {false, "Custom section is missing a block statement"};
     
     // Custom sections are more permissive
-    return true;
+    return {true, ""};
 }
 
 std::string CustomSection::translate_section(const std::string& ident) const {

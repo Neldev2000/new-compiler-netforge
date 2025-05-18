@@ -9,11 +9,11 @@ interfaces:
     ether1:
        type = "ethernet"
        admin_state = "enabled"
-        ether2:
-            admin_state = "enabled"
-            type = "ethernet"
+    ether2:
+        admin_state = "enabled"
+        type = "ethernet"
             
-            description = "WAN Connection"
+        description = "WAN Connection"
 
 ip:
     ether2:
