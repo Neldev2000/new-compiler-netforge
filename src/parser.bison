@@ -188,7 +188,7 @@ property_name
     | TOKEN_MODEL { $$ = "model"; }
     | TOKEN_TYPE { $$ = "type"; }
     | TOKEN_ADMIN_STATE { $$ = "admin_state"; }
-    | TOKEN_DESCRIPTION { $$ = "description"; }
+    | TOKEN_DESCRIPTION { $$ = "comment"; }
     | TOKEN_ADDRESS { $$ = "address"; }
     | TOKEN_STATIC_ROUTE_DEFAULT_GW { $$ = "static_route_default_gw"; }
     | TOKEN_CHAIN { $$ = "chain"; }
