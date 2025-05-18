@@ -44,40 +44,6 @@ private:
     StatementList statements;
 };
 
-// Declaration for a property
-class PropertyDeclaration : public Declaration
-{
-public:
-    PropertyDeclaration(std::string_view prop_name, Expression* value) noexcept;
-    
-    Expression* get_value() const noexcept;
-    void destroy() noexcept override;
-    std::string to_string() const override;
-    std::string to_mikrotik(const std::string& ident) const override;
-    
-private:
-    Expression* value;
-};
-
-// Declaration for a network interface
-class InterfaceDeclaration : public Declaration
-{
-public:
-    InterfaceDeclaration(std::string_view iface_name) noexcept;
-    InterfaceDeclaration(std::string_view iface_name, const StatementList& statements) noexcept;
-    
-    // Add a statement to this interface
-    void add_statement(Statement* statement) noexcept;
-    
-    const StatementList& get_statements() const noexcept;
-    void destroy() noexcept override;
-    std::string to_string() const override;
-    std::string to_mikrotik(const std::string& ident) const override;
-    
-private:
-    StatementList statements;
-};
-
 // Program root declaration (holds all top-level sections)
 class ProgramDeclaration : public Declaration
 {

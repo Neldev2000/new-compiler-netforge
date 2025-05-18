@@ -9,11 +9,11 @@ interfaces:
     ether1:
        type = "ethernet"
        admin_state = "enabled"
-    ether2:
-        admin_state = "enabled"
-        type = "ethernet"
-        
-        description = "WAN Connection"
+        ether2:
+            admin_state = "enabled"
+            type = "ethernet"
+            
+            description = "WAN Connection"
 
 ip:
     ether2:
@@ -30,16 +30,19 @@ routing:
 
 # Firewall configuration
 firewall:
+
     filter:
+
         input_accept_established:
             chain = input
             connection_state = ["established", "related"]
+
             action = accept
-            
+        
         input_drop_all:
             chain = input
             action = drop
-            
+
     nat:
         srcnat_masquerade:
             chain = srcnat
