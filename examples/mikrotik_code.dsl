@@ -9,3 +9,4 @@ interfaces:
     ether2:
         type = "ethernet"
         description = "Second interface" 
+        

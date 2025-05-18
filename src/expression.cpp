@@ -42,7 +42,7 @@ std::string StringValue::to_string() const
 std::string StringValue::to_mikrotik(const std::string& ident) const
 {
     // In MikroTik, strings are enclosed in double quotes
-    return ident + "\"" + str_value + "\"";
+    return  "\"" + str_value + "\"";
 }
 
 // NumberValue implementation
@@ -67,7 +67,7 @@ std::string NumberValue::to_string() const
 std::string NumberValue::to_mikrotik(const std::string& ident) const
 {
     // Numbers in MikroTik are represented directly
-    return ident + std::to_string(num_value);
+    return std::to_string(num_value);
 }
 
 // BooleanValue implementation
@@ -92,7 +92,7 @@ std::string BooleanValue::to_string() const
 std::string BooleanValue::to_mikrotik(const std::string& ident) const
 {
     // Boolean in MikroTik is represented as true/false (lowercase)
-    return ident + (bool_value ? "true" : "false");
+    return (bool_value ? "true" : "false");
 }
 
 // IPAddressValue implementation
@@ -117,7 +117,7 @@ std::string IPAddressValue::to_string() const
 std::string IPAddressValue::to_mikrotik(const std::string& ident) const
 {
     // IP addresses in MikroTik can be represented in quotes or directly
-    return ident + "\"" + ip_value + "\"";
+    return "\"" + ip_value + "\"";
 }
 
 // IPCIDRValue implementation
@@ -142,7 +142,7 @@ std::string IPCIDRValue::to_string() const
 std::string IPCIDRValue::to_mikrotik(const std::string& ident) const
 {
     // CIDR notation in MikroTik can be represented in quotes or directly
-    return ident + "\"" + cidr_value + "\"";
+    return "\"" + cidr_value + "\"";
 }
 
 // ListValue implementation
@@ -213,7 +213,7 @@ std::string ListValue::to_mikrotik(const std::string& ident) const
 {
     // In MikroTik, arrays are represented with curly braces
     std::stringstream ss;
-    ss << ident << "{";
+    ss << "{";
     bool first = true;
     
     for (const auto* value : values) {
@@ -262,7 +262,7 @@ std::string IdentifierExpression::to_string() const
 std::string IdentifierExpression::to_mikrotik(const std::string& ident) const
 {
     // In MikroTik, variables are prefixed with $
-    return ident + "$" + name;
+    return "$" + name;
 }
 
 // PropertyReference implementation
@@ -304,7 +304,7 @@ std::string PropertyReference::to_mikrotik(const std::string& ident) const
 {
     // In MikroTik, property access uses the -> operator
     if (base) {
-        return ident + "(" + base->to_mikrotik("") + "->" + property_name + ")";
+        return "(" + base->to_mikrotik("") + "->" + property_name + ")";
     }
-    return ident + "$" + property_name;
+    return "$" + property_name;
 } 

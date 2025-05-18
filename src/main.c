@@ -34,16 +34,14 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    printf("Parsing %s...\n", argv[1]);
-    
+
     /* Enable parser debugging if needed */
     // yydebug = 1;
     
     int parse_result = yyparse();
 
     if (parse_result == 0) {
-        printf("Parse successful! The input conforms to the Mikrotik DSL grammar.\n");
-        
+  
         // Generate output filename from input if not provided
         char output_filename[256];
         if (argc == 3) {
@@ -55,7 +53,7 @@ int main(int argc, char* argv[]) {
         
         // Check if the AST was successfully built
         if (parser_result) {
-            printf("Translating to RouterOS script...\n");
+          
             
             // Open output file for writing
             std::ofstream output_file(output_filename);
@@ -67,10 +65,8 @@ int main(int argc, char* argv[]) {
                 output_file << routeros_script;
                 output_file.close();
                 
-                printf("Translation complete. Output written to %s\n", output_filename);
-                
-                // Print AST for debugging if needed
-                printf("Parsed AST Structure:\n%s\n", parser_result->to_string().c_str());
+             
+         
             } else {
                 printf("Error: Could not open output file %s\n", output_filename);
             }

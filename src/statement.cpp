@@ -42,25 +42,14 @@ std::string PropertyStatement::to_mikrotik(const std::string& ident) const
 {
     std::stringstream ss;
     
-    // In MikroTik, properties are typically passed as parameters in the format name=value
-    ss << ident;
-    
-    // Special handling for common properties
-    if (name == "enabled" || name == "disabled") {
-        // Boolean properties often use lowercase in MikroTik
-        ss << name << "=";
-    } else {
-        ss << name << "=";
-    }
+    ss << name << "=";
     
     if (value) {
-        // Use empty indentation for inline values
         ss << value->to_mikrotik("");
     } else {
         ss << "\"\""; // Empty string for null values
     }
     
-    ss << "\n";
     return ss.str();
 }
 
@@ -108,17 +97,13 @@ std::string BlockStatement::to_mikrotik(const std::string& ident) const
 {
     std::stringstream ss;
     
-    // In MikroTik, code blocks are enclosed in curly braces
-    ss << ident << "{\n";
-    
-    // Process all statements in the block
+    // Process all statements in the block without adding extra indentation
     for (const auto* statement : statements) {
         if (statement) {
-            ss << statement->to_mikrotik(ident + "    ");
+            ss << statement->to_mikrotik(ident);
         }
     }
-    
-    ss << ident << "}\n";
+
     return ss.str();
 }
 
@@ -217,19 +202,105 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
             std::replace(mikrotik_path.begin(), mikrotik_path.end(), ' ', '-');
             break;
     }
-    
-    ss << ident << mikrotik_path << "\n";
-    
-    // Process the block if it exists
+
+    // Determine action based on section type and name
+    std::string action = determine_action(type, name);
+
+    // Recopilate parameters from PropertyStatement children
+    std::vector<std::string> property_params;
+    std::stringstream nested_commands;
+
     if (block) {
-        // For sections, we don't add a block wrapper, just process the statements
-        // as they may need to use the current path context
-        for (const auto* statement : block->get_statements()) {
-            if (statement) {
-                ss << statement->to_mikrotik(ident);
+        for (const auto* stmt : block->get_statements()) {
+            if (const auto* prop_stmt = dynamic_cast<const PropertyStatement*>(stmt)) {
+                // Add the name=value pair without additional formatting
+                property_params.push_back(prop_stmt->to_mikrotik(""));
+            } else if (const auto* sub_section = dynamic_cast<const SectionStatement*>(stmt)) {
+                // Handle sub-section: adjust the path for the nested section
+                // For example, if we're in /ip and have a firewall sub-section, 
+                // the full path would be /ip firewall
+                std::string sub_path = mikrotik_path;
+                
+                // If the current path doesn't end with a slash, add a space
+                if (!sub_path.empty() && sub_path.back() != '/') {
+                    sub_path += " ";
+                }
+                
+                // Append the sub-section name to the path
+                sub_path += sub_section->get_name();
+                
+                // Replace spaces with dashes and convert to lowercase for path consistency
+                std::string formatted_sub_path = sub_path;
+                std::transform(formatted_sub_path.begin(), formatted_sub_path.end(), 
+                                formatted_sub_path.begin(), ::tolower);
+                std::replace(formatted_sub_path.begin(), formatted_sub_path.end(), ' ', '-');
+                
+                // Create a temporary section statement with the new path
+                SectionStatement temp_section(
+                    sub_section->get_name(), 
+                    SectionType::CUSTOM,  // Using CUSTOM since we've already built the path
+                    sub_section->get_block()
+                );
+                
+                // Process the sub-section with the combined path
+                std::stringstream sub_section_ss;
+                sub_section_ss << ident << "# Sub-section: " << sub_section->get_name() 
+                              << " (Full path: " << formatted_sub_path << ")\n";
+                
+                // Process the properties of the sub-section
+                std::vector<std::string> sub_property_params;
+                std::stringstream sub_nested_commands;
+                
+                if (sub_section->get_block()) {
+                    for (const auto* sub_stmt : sub_section->get_block()->get_statements()) {
+                        if (const auto* sub_prop = dynamic_cast<const PropertyStatement*>(sub_stmt)) {
+                            sub_property_params.push_back(sub_prop->to_mikrotik(""));
+                        } else {
+                            // For deeper nested statements, use regular processing with increased indentation
+                            sub_nested_commands << sub_stmt->to_mikrotik(ident + "    ");
+                        }
+                    }
+                }
+                
+                // Determine action for the sub-section
+                std::string sub_action = determine_action(sub_section->get_section_type(), sub_section->get_name());
+                
+                // If we have properties, assemble the command for the sub-section
+                if (!sub_property_params.empty()) {
+                    sub_section_ss << ident << formatted_sub_path << " " << sub_action;
+                    
+                    // Add all parameters with spaces between them
+                    for (const auto& param : sub_property_params) {
+                        sub_section_ss << " " << param;
+                    }
+                    sub_section_ss << "\n";
+                }
+                
+                // Add any deeply nested commands
+                sub_section_ss << sub_nested_commands.str();
+                
+                // Add the sub-section output to our nested commands
+                nested_commands << sub_section_ss.str();
+            } else {
+                // For other statement types (that are not PropertyStatement or SectionStatement)
+                nested_commands << stmt->to_mikrotik(ident + "    ");
             }
         }
     }
+
+    // If we have properties, assemble the command
+    if (!property_params.empty()) {
+        ss << ident << mikrotik_path << " " << action;
+        
+        // Add all parameters with spaces between them
+        for (const auto& param : property_params) {
+            ss << " " << param;
+        }
+        ss << "\n";
+    }
+
+    // Add any nested commands
+    ss << nested_commands.str();
     
     return ss.str();
 }
@@ -262,3 +333,50 @@ std::string DeclarationStatement::to_mikrotik(const std::string& ident) const
     // Just delegate to the declaration's to_mikrotik method
     return declaration ? declaration->to_mikrotik(ident) : ident + "# null declaration\n";
 } 
+
+  static std::string determine_action(SectionType type, const std::string& section_name) {
+      // Usar sección system
+      if (type == SectionType::SYSTEM) {
+          if (section_name == "identity" || section_name == "clock" || section_name == "ntp client") {
+              return "set";
+          } else if (section_name == "backup") {
+              return "save";
+          } else if (section_name == "scheduler" || section_name == "script") {
+              return "add";
+          }
+      }
+      // Usar sección interfaces
+      else if (type == SectionType::INTERFACES) {
+          if (section_name == "bridge port") {
+              return "add";
+          }
+          return "add"; // Por defecto para interfaces
+      }
+      // Usar sección IP
+      else if (type == SectionType::IP) {
+          if (section_name == "dns" || section_name == "settings") {
+              return "set";
+          } else if (section_name == "address" || section_name == "route" ||
+                    section_name == "pool" || section_name == "dhcp-server" ||
+                    section_name.find("firewall") != std::string::npos) {
+              return "add";
+          }
+      }
+      // Routing normalmente usa add
+      else if (type == SectionType::ROUTING) {
+          return "add";
+      }
+      // Firewall normalmente usa add
+      else if (type == SectionType::FIREWALL) {
+          return "add";
+      }
+      // Device depende del contexto
+      else if (type == SectionType::DEVICE) {
+          if (section_name == "user") {
+              return "add";
+          }
+      }
+
+      // Valor por defecto
+      return "set";
+  }

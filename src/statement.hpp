@@ -77,6 +77,9 @@ public:
     // Static method to convert section type to string
     static std::string section_type_to_string(SectionType type);
     
+    // Static method to determine the RouterOS action based on section type and name
+    static std::string determine_action(SectionType type, const std::string& section_name);
+    
     void destroy() noexcept override;
     std::string to_string() const override;
     std::string to_mikrotik(const std::string& ident) const override;
