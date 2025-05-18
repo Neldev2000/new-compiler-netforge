@@ -24,6 +24,7 @@ DIGIT           [0-9]
 LETTER          [a-zA-Z]
 BOOL            true|false
 IDENTIFIER      {LETTER}[a-zA-Z0-9_]*
+INTERFACE_ID    ether[0-9]+|wlan[0-9]+|bridge[0-9]+|vlan[0-9]+|bond[0-9]+
 NUMBER          {DIGIT}+
 STRING          \"[^\"]*\"
 COMMENT         #[^\n]*
@@ -117,6 +118,11 @@ IPV6_RANGE      {IPV6_ADDRESS}\-{IPV6_ADDRESS}
 {IP_RANGE}      { yylval.str_val = strdup(yytext); return TOKEN_IP_RANGE; }
 {IP_ADDRESS}    { yylval.str_val = strdup(yytext); return TOKEN_IP_ADDRESS; }
 {BOOL}          { yylval.str_val = strdup(yytext); return TOKEN_BOOL; }
+{INTERFACE_ID}  { 
+                    fprintf(stderr, "DEBUG: SCANNER Found interface identifier: '%s'\n", yytext);
+                    yylval.str_val = strdup(yytext); 
+                    return TOKEN_IDENTIFIER; 
+                }
 {IDENTIFIER}    { yylval.str_val = strdup(yytext); return TOKEN_IDENTIFIER; }
 {NUMBER}        { yylval.int_val = atoi(yytext); return TOKEN_NUMBER; }
 {STRING}        { yylval.str_val = strdup(yytext); return TOKEN_STRING; }

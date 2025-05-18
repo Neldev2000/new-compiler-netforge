@@ -562,6 +562,15 @@ void ProgramDeclaration::add_section(SectionStatement* section) noexcept
 {
     if (section) {
         sections.push_back(section);
+        
+        // Set parent for any sub-sections in the block
+        if (section->get_block()) {
+            for (auto* stmt : section->get_block()->get_statements()) {
+                if (auto* sub_section = dynamic_cast<SectionStatement*>(stmt)) {
+                    sub_section->set_parent(section);
+                }
+            }
+        }
     }
 }
 

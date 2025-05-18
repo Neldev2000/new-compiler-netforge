@@ -4,8 +4,13 @@ device:
     model = "test"
 
 interfaces:
+    # LAN interface
     ether1:
         type = "ethernet"
-        description = "Test interface"
-        ip:
-            address = 192.168.1.1/24 
+        admin_state = "enabled"
+
+        # WAN interface
+    ether2:
+        type = "ethernet"
+        admin_state = "enabled"
+        description = "WAN Connection"

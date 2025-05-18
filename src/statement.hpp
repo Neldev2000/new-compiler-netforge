@@ -67,6 +67,10 @@ public:
     SectionStatement(std::string_view name, SectionType type) noexcept;
     SectionStatement(std::string_view name, SectionType type, BlockStatement* block) noexcept;
     
+    // Add parent setter/getter
+    void set_parent(SectionStatement* parent) noexcept;
+    SectionStatement* get_parent() const noexcept;
+    
     const std::string& get_name() const noexcept;
     SectionType get_section_type() const noexcept;
     BlockStatement* get_block() const noexcept;
@@ -82,12 +86,16 @@ public:
     
     void destroy() noexcept override;
     std::string to_string() const override;
-    std::string to_mikrotik(const std::string& ident) const override;
+    std::string to_mikrotik(const std::string& ident = "") const override;
+    
+    // Get effective type based on parent context
+    SectionType get_effective_type() const noexcept;
     
 protected:
     std::string name;
     SectionType type;
     BlockStatement* block;
+    SectionStatement* parent_section;
 };
 
 // Declaration statement (wrapper for a declaration)

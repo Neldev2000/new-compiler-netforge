@@ -1,7 +1,7 @@
 #pragma once
 
 #include "statement.hpp"
-
+#include <map>
 // Base class for all specialized sections
 class SpecializedSection : public SectionStatement {
 public:

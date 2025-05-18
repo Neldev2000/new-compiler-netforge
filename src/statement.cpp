@@ -72,6 +72,13 @@ void BlockStatement::add_statement(Statement* statement) noexcept
 {
     if (statement) {
         statements.push_back(statement);
+        
+        // If this statement is a section, look for its parent in the surrounding blocks
+        if (dynamic_cast<SectionStatement*>(statement)) {
+            // Find the parent section by walking up the AST
+            // We can only do this if we have a parent/owner tracking mechanism
+            // For now, this will be handled by the ProgramDeclaration::add_section method
+        }
     }
 }
 
@@ -118,10 +125,10 @@ std::string BlockStatement::to_mikrotik(const std::string& ident) const
 
 // SectionStatement implementation
 SectionStatement::SectionStatement(std::string_view name, SectionType type) noexcept 
-    : name(name), type(type), block(nullptr) {}
+    : name(name), type(type), block(nullptr), parent_section(nullptr) {}
 
 SectionStatement::SectionStatement(std::string_view name, SectionType type, BlockStatement* block) noexcept 
-    : name(name), type(type), block(block) {}
+    : name(name), type(type), block(block), parent_section(nullptr) {}
 
 const std::string& SectionStatement::get_name() const noexcept 
 {
@@ -141,6 +148,45 @@ BlockStatement* SectionStatement::get_block() const noexcept
 void SectionStatement::set_block(BlockStatement* block) noexcept 
 {
     this->block = block;
+}
+
+void SectionStatement::set_parent(SectionStatement* parent) noexcept 
+{
+    parent_section = parent;
+}
+
+SectionStatement* SectionStatement::get_parent() const noexcept 
+{
+    return parent_section;
+}
+
+SectionStatement::SectionType SectionStatement::get_effective_type() const noexcept 
+{
+    // If this is a custom section and has a parent, determine its actual type based on context
+    if (type == SectionType::CUSTOM && parent_section != nullptr) {
+        SectionType parent_type = parent_section->get_section_type();
+        
+        // Handle subsections based on parent context
+        if (parent_type == SectionType::INTERFACES) {
+            // Inside interfaces section, treat subsections as interface definitions
+            return SectionType::INTERFACES;
+        }
+        else if (parent_type == SectionType::IP) {
+            // Inside IP section, treat subsections as IP configuration
+            return SectionType::IP;
+        }
+        else if (parent_type == SectionType::ROUTING) {
+            // Inside routing section
+            return SectionType::ROUTING;
+        }
+        else if (parent_type == SectionType::FIREWALL) {
+            // Inside firewall section
+            return SectionType::FIREWALL;
+        }
+    }
+    
+    // Default to the original type
+    return type;
 }
 
 std::string SectionStatement::section_type_to_string(SectionType type) 
@@ -288,14 +334,14 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
     }
     
     // Special handling for interfaces section
-    if (type == SectionType::INTERFACES) {
-        // Reset mikrotik_path to just "/interface" without any dashes
-        mikrotik_path = "/interface";
-        
-        printf("DEBUG: Processing interfaces section with %zu statement(s)\n", 
-               block ? block->get_statements().size() : 0);
-        
-        std::stringstream nested_commands;
+if (type == SectionType::INTERFACES) {
+    // Reset mikrotik_path to just "/interface" without any dashes
+    mikrotik_path = "/interface";
+    
+    printf("DEBUG: Processing interfaces section with %zu statement(s)\n", 
+           block ? block->get_statements().size() : 0);
+    
+    std::stringstream nested_commands;
         
         // Process all statements within interfaces block
         if (block) {
@@ -318,8 +364,8 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                     
                     // Ensure interface name is valid (not just a colon)
                     if (interface_name.empty()) {
-                        // Skip invalid interface names
-                        continue;
+                        printf("ERROR: Empty interface name found, section name='%s'\n", sub_section->get_name().c_str());
+                        continue; // Skip invalid interface names
                     }
                     
                     // Variables to store interface properties

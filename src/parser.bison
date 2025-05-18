@@ -164,6 +164,7 @@ statement
         $$ = new PropertyStatement($1, static_cast<Value*>($3));
     }
     | identifier TOKEN_COLON block {
+        fprintf(stderr, "DEBUG: Creating section with identifier '%s'\n", $1);
         $$ = SectionFactory::create_section($1, SectionStatement::SectionType::CUSTOM, $3);
     }
     | TOKEN_SEMICOLON {
@@ -206,7 +207,10 @@ property_name
 
 /* Generic identifier for tokens that can appear before colon */
 identifier
-    : TOKEN_IDENTIFIER { $$ = strdup(yytext); }
+    : TOKEN_IDENTIFIER { 
+        $$ = $1; // Use the value passed from the scanner ($1) instead of yytext
+        fprintf(stderr, "DEBUG: PARSER Identified identifier: '%s'\n", $1);
+    }
     | TOKEN_ETHERNET { $$ = "ethernet"; }
     | TOKEN_VLAN { $$ = "vlan"; }
     | TOKEN_IP { $$ = "ip"; }
