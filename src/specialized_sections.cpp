@@ -1061,7 +1061,191 @@ std::tuple<bool, std::string> RoutingSection::validate() const noexcept {
     const BlockStatement* block = get_block();
     if (!block) return {false, "Routing section is missing a block statement"};
     
-    // Add specific routing section validation logic here
+    // Define regular expression for IPv4 validation
+    std::regex ipv4_pattern("^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$");
+    std::regex cidr_pattern("^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\/(3[0-2]|[1-2]?[0-9]))$");
+    
+    // Define valid routing section properties
+    const std::set<std::string> valid_top_props = {
+        "static_route_default_gw" // Default gateway property
+    };
+    
+    // Define valid properties for static routes
+    const std::set<std::string> valid_route_props = {
+        "destination", "dst-address", "dst",       // Destination network
+        "gateway", "gw",                          // Next hop
+        "distance",                               // Administrative distance
+        "routing-table", "table",                 // Routing table name
+        "check-gateway",                          // Failover check method
+        "scope",                                  // Route scope
+        "target-scope",                           // Target scope
+        "suppress-hw-offload"                     // Hardware offload control
+    };
+    
+    bool has_default_gw = false;
+    
+    // Iterate through statements
+    for (const Statement* stmt : block->get_statements()) {
+        // Check for direct properties (like static_route_default_gw)
+        const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(stmt);
+        if (prop) {
+            const std::string& name = prop->get_name();
+            
+            // Check if it's a valid top-level property
+            if (valid_top_props.find(name) == valid_top_props.end()) {
+                return {false, "Invalid property '" + name + "' in routing section. Top-level routing properties are limited."};
+            }
+            
+            // Validate default gateway
+            if (name == "static_route_default_gw") {
+                has_default_gw = true;
+                
+                // Validate gateway IP address
+                if (prop->get_value()) {
+                    const StringValue* gw_value = dynamic_cast<const StringValue*>(prop->get_value());
+                    if (gw_value) {
+                        std::string gateway = gw_value->get_value();
+                        // Remove quotes if present
+                        if (gateway.size() >= 2 && gateway.front() == '"' && gateway.back() == '"') {
+                            gateway = gateway.substr(1, gateway.size() - 2);
+                        }
+                        
+                        // Validate gateway format using regex
+                        if (!std::regex_match(gateway, ipv4_pattern)) {
+                            return {false, "Invalid default gateway IP address format: " + gateway};
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Check for route subsections
+        const SectionStatement* subsection = dynamic_cast<const SectionStatement*>(stmt);
+        if (subsection) {
+            std::string route_name = subsection->get_name();
+            
+            // Table subsections validation
+            if (route_name == "table" || route_name == "tables") {
+                if (!subsection->get_block()) {
+                    return {false, "Routing table section is missing its block"};
+                }
+                
+                // Validate table entries here if needed
+                continue;
+            }
+            
+            // Rule subsections validation
+            if (route_name == "rule" || route_name == "rules") {
+                if (!subsection->get_block()) {
+                    return {false, "Routing rule section is missing its block"};
+                }
+                
+                // Validate rule entries here if needed
+                continue;
+            }
+            
+            // Assume this is a static route entry (static_route1, etc.)
+            if (!subsection->get_block()) {
+                return {false, "Route entry '" + route_name + "' is missing its block"};
+            }
+            
+            bool has_destination = false;
+            bool has_gateway = false;
+            
+            // Validate route properties
+            for (const Statement* route_stmt : subsection->get_block()->get_statements()) {
+                const PropertyStatement* route_prop = dynamic_cast<const PropertyStatement*>(route_stmt);
+                if (route_prop) {
+                    const std::string& prop_name = route_prop->get_name();
+                    
+                    // Check if this is a valid route property
+                    if (valid_route_props.find(prop_name) == valid_route_props.end()) {
+                        return {false, "Invalid property '" + prop_name + "' in route '" + route_name + "'"};
+                    }
+                    
+                    // Validate destination
+                    if (prop_name == "destination" || prop_name == "dst-address" || prop_name == "dst") {
+                        has_destination = true;
+                        
+                        // Validate destination format
+                        if (route_prop->get_value()) {
+                            const StringValue* dst_value = dynamic_cast<const StringValue*>(route_prop->get_value());
+                            if (dst_value) {
+                                std::string destination = dst_value->get_value();
+                                // Remove quotes if present
+                                if (destination.size() >= 2 && destination.front() == '"' && destination.back() == '"') {
+                                    destination = destination.substr(1, destination.size() - 2);
+                                }
+                                
+                                // Validate CIDR format
+                                if (!std::regex_match(destination, cidr_pattern)) {
+                                    return {false, "Invalid destination network format in route '" + 
+                                                  route_name + "': " + destination + 
+                                                  ". Must be in CIDR format (e.g. 192.168.1.0/24)"};
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Validate gateway
+                    if (prop_name == "gateway" || prop_name == "gw") {
+                        has_gateway = true;
+                        
+                        // Validate gateway format
+                        if (route_prop->get_value()) {
+                            const StringValue* gw_value = dynamic_cast<const StringValue*>(route_prop->get_value());
+                            if (gw_value) {
+                                std::string gateway = gw_value->get_value();
+                                // Remove quotes if present
+                                if (gateway.size() >= 2 && gateway.front() == '"' && gateway.back() == '"') {
+                                    gateway = gateway.substr(1, gateway.size() - 2);
+                                }
+                                
+                                // Allow interface names, IP addresses, or routing marks
+                                if (!std::regex_match(gateway, ipv4_pattern) && 
+                                    gateway.find("ether") != 0 && 
+                                    gateway.find("wlan") != 0 &&
+                                    gateway.find("bridge") != 0) {
+                                    
+                                    // If not an IP or common interface, warn but don't fail
+                                    // (could be a custom interface name or routing mark)
+                                    // Consider adding more validation here if needed
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Validate distance
+                    if (prop_name == "distance") {
+                        if (route_prop->get_value()) {
+                            const NumberValue* distance_value = dynamic_cast<const NumberValue*>(route_prop->get_value());
+                            if (!distance_value) {
+                                return {false, "Distance property in route '" + route_name + 
+                                              "' must be a number"};
+                            }
+                            
+                            // Check distance range (1-255)
+                            double distance = distance_value->get_value();
+                            if (distance < 1 || distance > 255) {
+                                return {false, "Distance value in route '" + route_name + 
+                                              "' must be between 1 and 255"};
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // All static routes should have both destination and gateway
+            if (!has_destination) {
+                return {false, "Route '" + route_name + "' is missing required 'destination/dst-address' property"};
+            }
+            
+            if (!has_gateway) {
+                return {false, "Route '" + route_name + "' is missing required 'gateway' property"};
+            }
+        }
+    }
+    
     return {true, ""};
 }
 

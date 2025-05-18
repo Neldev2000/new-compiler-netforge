@@ -16,7 +16,7 @@ interfaces:
         description = "WAN Connection"
 
 ip:
-    ether2:
+    bridge:
         address = 192.168.1.1/24
     ether1:
         address = 10.0.0.1/24
