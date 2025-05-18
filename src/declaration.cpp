@@ -561,12 +561,29 @@ ProgramDeclaration::ProgramDeclaration() noexcept
 void ProgramDeclaration::add_section(SectionStatement* section) noexcept 
 {
     if (section) {
+        fprintf(stderr, "DEBUG: Adding section '%s' to program, now has %zu sections\n", 
+                section->get_name().c_str(), sections.size() + 1);
+        
+        // Additional debug for section type
+        fprintf(stderr, "DEBUG: Section type: %s\n", 
+                SectionStatement::section_type_to_string(section->get_section_type()).c_str());
+                
+        // Debug for block content
+        if (section->get_block()) {
+            fprintf(stderr, "DEBUG: Section block has %zu statements\n", 
+                    section->get_block()->get_statements().size());
+        } else {
+            fprintf(stderr, "DEBUG: Section has no block\n");
+        }
+        
         sections.push_back(section);
         
         // Set parent for any sub-sections in the block
         if (section->get_block()) {
             for (auto* stmt : section->get_block()->get_statements()) {
                 if (auto* sub_section = dynamic_cast<SectionStatement*>(stmt)) {
+                    fprintf(stderr, "DEBUG: Setting parent for subsection '%s'\n", 
+                            sub_section->get_name().c_str());
                     sub_section->set_parent(section);
                 }
             }

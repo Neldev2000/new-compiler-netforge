@@ -71,6 +71,11 @@ BlockStatement::BlockStatement(const StatementList& statements) noexcept
 void BlockStatement::add_statement(Statement* statement) noexcept 
 {
     if (statement) {
+        fprintf(stderr, "DEBUG: Adding statement to block, now has %zu statements\n", statements.size() + 1);
+        if (dynamic_cast<SectionStatement*>(statement)) {
+            SectionStatement* section = dynamic_cast<SectionStatement*>(statement);
+            fprintf(stderr, "DEBUG: Statement is a section with name '%s'\n", section->get_name().c_str());
+        }
         statements.push_back(statement);
         
         // If this statement is a section, look for its parent in the surrounding blocks
