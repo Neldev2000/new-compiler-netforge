@@ -96,7 +96,7 @@ std::string BlockStatement::to_string() const
     std::stringstream ss;
     for (const auto* statement : statements) {
         if (statement) {
-            ss << "    " << statement->to_string() << "\n";
+            ss  << statement->to_string() << "\n";
         }
     }
     return ss.str();
@@ -244,11 +244,8 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                     } else {
                         // Process other statements - BUT NOT vendor or model separately
                         // Skip individual vendor/model properties as they're combined into name
-                        nested_commands << stmt->to_mikrotik(ident + "    ");
+                        nested_commands << stmt->to_mikrotik("");
                     }
-                } else {
-                    // Process other statements
-                    nested_commands << stmt->to_mikrotik(ident + "    ");
                 }
             }
         }
@@ -280,7 +277,7 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
             }
             
             // Generate the system identity command
-            ss << ident << mikrotik_path << " " << action << " name=\"" << device_name << "\"\n";
+            ss << mikrotik_path << " " << action << " name=\"" << device_name << "\"\n";
         }
 
         // Add nested commands, but NOT duplicate vendor/model statements
@@ -292,6 +289,12 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
     
     // Special handling for interfaces section
     if (type == SectionType::INTERFACES) {
+        // Reset mikrotik_path to just "/interface" without any dashes
+        mikrotik_path = "/interface";
+        
+        printf("DEBUG: Processing interfaces section with %zu statement(s)\n", 
+               block ? block->get_statements().size() : 0);
+        
         std::stringstream nested_commands;
         
         // Process all statements within interfaces block
@@ -299,11 +302,22 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
             for (const auto* stmt : block->get_statements()) {
                 // Check if this is a subsection (like "ether1:")
                 if (const auto* sub_section = dynamic_cast<const SectionStatement*>(stmt)) {
+                    printf("DEBUG: Found subsection with name='%s'\n", sub_section->get_name().c_str());
+
                     // Get the interface name (e.g., "ether1" from "ether1:")
                     std::string interface_name = sub_section->get_name();
                     
+                    // Debug output
+                    printf("DEBUG: Interface name before processing: '%s'\n", interface_name.c_str());
+                    
+                    // Remove trailing colon if present
+                    if (!interface_name.empty() && interface_name.back() == ':') {
+                        interface_name = interface_name.substr(0, interface_name.size() - 1);
+                        printf("DEBUG: Interface name after removing colon: '%s'\n", interface_name.c_str());
+                    }
+                    
                     // Ensure interface name is valid (not just a colon)
-                    if (interface_name == ":" || interface_name.empty()) {
+                    if (interface_name.empty()) {
                         // Skip invalid interface names
                         continue;
                     }
@@ -347,6 +361,11 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                                 // Process nested sections (like IP configuration)
                                 std::string nested_section_name = nested_section->get_name();
                                 
+                                // Remove trailing colon if present in nested section name
+                                if (!nested_section_name.empty() && nested_section_name.back() == ':') {
+                                    nested_section_name = nested_section_name.substr(0, nested_section_name.size() - 1);
+                                }
+                                
                                 // Handle specific nested sections
                                 if (nested_section_name == "ip") {
                                     // Process IP configuration for this interface
@@ -360,10 +379,14 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                                                         ip_value = ip_value.substr(1, ip_value.size() - 2);
                                                     }
                                                     
-                                                    // Generate /ip address add command
-                                                    sub_nested_commands << ident << "/ip address add address=" 
+                                                    // Generate /ip address add command - use hardcoded path
+                                                    sub_nested_commands << "/ip address add address=" 
                                                                       << ip_value << " interface=" 
                                                                       << interface_name << "\n";
+                                                    
+                                                    // Debug output
+                                                    printf("DEBUG: Generated IP command: '/ip address add address=%s interface=%s'\n",
+                                                           ip_value.c_str(), interface_name.c_str());
                                                 }
                                             }
                                         }
@@ -371,12 +394,12 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                                 }
                                 else {
                                     // Handle other nested sections
-                                    sub_nested_commands << nested_section->to_mikrotik(ident);
+                                    sub_nested_commands << nested_section->to_mikrotik("");
                                 }
                             }
                             else {
                                 // Other types of statements
-                                sub_nested_commands << sub_stmt->to_mikrotik(ident + "    ");
+                                sub_nested_commands << sub_stmt->to_mikrotik("");
                             }
                         }
                     }
@@ -386,8 +409,12 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                     if (interface_type == "ethernet") {
                         command = "set";
                         
-                        // When using 'set', the interface name goes after the command
-                        nested_commands << ident << mikrotik_path << " " << interface_type << " " << command << " " 
+                        // Debug output
+                        printf("DEBUG: Constructing interface command with type='%s', command='%s', name='%s'\n", 
+                               interface_type.c_str(), command.c_str(), interface_name.c_str());
+                        
+                        // Directly generate the interface command with the proper path
+                        nested_commands << "/interface " << interface_type << " " << command << " " 
                                        << interface_name;
                         
                         // Add all interface properties
@@ -396,11 +423,15 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                         }
                         
                         nested_commands << "\n";
+                        
+                        // Debug output the generated command
+                        printf("DEBUG: Generated interface command: '/interface %s %s %s...'\n", 
+                               interface_type.c_str(), command.c_str(), interface_name.c_str());
                     }
                     else {
                         // For other interface types, use 'add' with name as a parameter
-                        nested_commands << ident << mikrotik_path << " " << interface_type << " " << command 
-                                       << " name=\"" << interface_name << "\"";
+                        nested_commands << "/interface " << interface_type << " " << command 
+                                      << " name=\"" << interface_name << "\"";
                         
                         // Add all interface properties
                         for (const auto& prop : interface_properties) {
@@ -415,7 +446,7 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                 }
                 else {
                     // Handle non-subsection statements (e.g., global interface properties)
-                    nested_commands << stmt->to_mikrotik(ident + "    ");
+                    nested_commands << stmt->to_mikrotik("");
                 }
             }
         }
@@ -476,14 +507,14 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                             sub_property_params.push_back(sub_prop->to_mikrotik(""));
                         } else {
                             // For deeper nested statements, use regular processing with increased indentation
-                            sub_nested_commands << sub_stmt->to_mikrotik(ident + "    ");
+                            sub_nested_commands << sub_stmt->to_mikrotik("");
                         }
                     }
                 }
                 
                 // If we have properties, assemble the command for the sub-section
                 if (!sub_property_params.empty()) {
-                    sub_section_ss << ident << formatted_sub_path << " " << sub_action;
+                    sub_section_ss  << formatted_sub_path << " " << sub_action;
                     
                     // Add all parameters with spaces between them
                     for (const auto& param : sub_property_params) {
@@ -499,7 +530,7 @@ std::string SectionStatement::to_mikrotik(const std::string& ident) const
                 nested_commands << sub_section_ss.str();
             } else {
                 // For other statement types (that are not PropertyStatement or SectionStatement)
-                nested_commands << stmt->to_mikrotik(ident + "    ");
+                nested_commands << stmt->to_mikrotik("");
             }
         }
     }
@@ -561,7 +592,7 @@ std::string SectionStatement::determine_action(SectionType type, const std::stri
               return "add";
           }
       }
-      // Usar sección interfaces
+      // Usar sección interfaces"
       else if (type == SectionType::INTERFACES) {
           if (section_name == "bridge port") {
               return "add";
