@@ -1,5 +1,6 @@
 #include "semantic_validator.hpp"
 #include "specialized_sections.hpp"
+#include <regex>
 
 // Base SectionValidator implementation
 SectionValidator::SectionValidator(std::string section_name, NestingRule nesting_rule)
@@ -314,4 +315,212 @@ bool InterfacesValidator::isValidNesting(const std::string& parent_name,
     
     // By default, don't allow nesting for interfaces
     return false;
+}
+
+IPValidator::IPValidator()
+    : SectionValidator("IP", NestingRule::CONDITIONAL_NESTING) {
+}
+
+std::tuple<bool, std::string> IPValidator::validateProperties(
+    const SectionStatement* section) const {
+
+    // Define regular expression for IPv4 validation
+    // Format: xxx.xxx.xxx.xxx/xx where xxx is 0-255 and xx is 0-32
+    std::regex ipv4_pattern("^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\/(3[0-2]|[1-2]?[0-9]))?$");
+    
+    // Define valid subsections in IP section
+    const std::set<std::string> valid_subsections = {
+        "address", "route", "firewall", "dhcp-server", "dhcp-client", 
+        "dns", "arp", "service", "neighbor", "proxy"
+    };
+    
+    // Define valid properties directly under IP section
+    const std::set<std::string> valid_direct_props = {
+        "dns-server", "allow-remote-requests"
+    };
+    
+    std::string section_name = section->get_name();
+    
+    // Check if this is an interface subsection (for address assignment)
+    bool is_interface_section = true;
+    
+    // Check if this is a known subsection type
+    for (const auto& valid_name : valid_subsections) {
+        if (section_name == valid_name) {
+            is_interface_section = false;
+            break;
+        }
+    }
+    
+    // Validate interface address assignments
+    if (is_interface_section) {
+        // This is likely an interface name - validate its properties
+        const BlockStatement* block = section->get_block();
+        if (!block) {
+            return {false, "IP interface section '" + section_name + "' is missing its block"};
+        }
+        
+        bool has_address = false;
+        
+        // Check properties
+        for (const Statement* if_stmt : block->get_statements()) {
+            // Skip nested sections as they're validated by hierarchy validation
+            if (dynamic_cast<const SectionStatement*>(if_stmt)) {
+                continue;
+            }
+            
+            const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(if_stmt);
+            if (prop) {
+                const std::string& prop_name = prop->get_name();
+                
+                // Validate address property
+                if (prop_name == "address") {
+                    has_address = true;
+                    
+                    // Check if the value is a valid IP address
+                    if (prop->get_value()) {
+                        const StringValue* addr_value = dynamic_cast<const StringValue*>(prop->get_value());
+                        if (addr_value) {
+                            std::string ip_addr = addr_value->get_value();
+                            // Remove quotes if present
+                            if (ip_addr.size() >= 2 && ip_addr.front() == '"' && ip_addr.back() == '"') {
+                                ip_addr = ip_addr.substr(1, ip_addr.size() - 2);
+                            }
+                            
+                            // Validate IP address format using regex
+                            if (!std::regex_match(ip_addr, ipv4_pattern)) {
+                                return {false, "Invalid IP address format in interface '" + section_name + 
+                                              "': " + ip_addr};
+                            }
+                        }
+                    }
+                } 
+                else {
+                    // Invalid property for interface IP section
+                    return {false, "Invalid property '" + prop_name + "' in IP interface section '" + 
+                                 section_name + "'. Only 'address' is allowed."};
+                }
+            }
+            else {
+                // Unknown statement type that is not a property or section
+                return {false, "IP interface section contains an invalid statement type"};
+            }
+        }
+        
+        // Ensure address is specified
+        if (!has_address) {
+            return {false, "IP interface section '" + section_name + 
+                          "' is missing required 'address' property"};
+        }
+    }
+    // Validate route subsection
+    else if (section_name == "route" || section_name == "routes") {
+        const BlockStatement* block = section->get_block();
+        if (!block) {
+            return {false, "IP route section is missing its block"};
+        }
+        
+        for (const Statement* route_stmt : block->get_statements()) {
+            const SectionStatement* route_section = dynamic_cast<const SectionStatement*>(route_stmt);
+            const PropertyStatement* route_prop = dynamic_cast<const PropertyStatement*>(route_stmt);
+            
+            // Default route is configured as a property
+            if (route_prop && route_prop->get_name() == "default") {
+                // Valid default route property
+                continue;
+            }
+            
+            // Specific route entries are sections
+            if (route_section) {
+                const BlockStatement* route_block = route_section->get_block();
+                if (!route_block) {
+                    return {false, "IP route entry '" + route_section->get_name() + "' is missing its block"};
+                }
+                
+                bool has_gateway = false;
+                
+                for (const Statement* route_detail : route_block->get_statements()) {
+                    const PropertyStatement* detail_prop = dynamic_cast<const PropertyStatement*>(route_detail);
+                    if (detail_prop) {
+                        if (detail_prop->get_name() == "gateway") {
+                            has_gateway = true;
+                            
+                            // Validate gateway IP
+                            if (detail_prop->get_value()) {
+                                const StringValue* gw_value = dynamic_cast<const StringValue*>(detail_prop->get_value());
+                                if (gw_value) {
+                                    std::string gateway = gw_value->get_value();
+                                    // Remove quotes if present
+                                    if (gateway.size() >= 2 && gateway.front() == '"' && gateway.back() == '"') {
+                                        gateway = gateway.substr(1, gateway.size() - 2);
+                                    }
+                                    
+                                    // Validate gateway IP address format (without subnet)
+                                    std::regex ip_only("^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$");
+                                    if (!std::regex_match(gateway, ip_only)) {
+                                        return {false, "Invalid gateway IP address format in route '" + 
+                                                      route_section->get_name() + "': " + gateway};
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // All routes should have a gateway
+                if (!has_gateway) {
+                    return {false, "IP route entry '" + route_section->get_name() + 
+                                  "' is missing required 'gateway' property"};
+                }
+            }
+        }
+    }
+    // For direct properties under the IP section
+    else if (!section->get_block()) { 
+        // This would be a direct property statement
+        const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(section);
+        if (prop) {
+            const std::string& prop_name = prop->get_name();
+            
+            // Check if it's a valid direct property
+            if (valid_direct_props.find(prop_name) == valid_direct_props.end()) {
+                return {false, "Invalid property '" + prop_name + "' directly under IP section"};
+            }
+        }
+        else {
+            // Unknown statement type
+            return {false, "IP section contains an invalid statement type"};
+        }
+    }
+    
+    return {true, ""};
+}
+
+bool IPValidator::isValidNesting(const std::string& parent_name, 
+                              const std::string& child_name) const {
+    // Define valid subsections
+    const std::set<std::string> valid_subsections = {
+        "address", "route", "firewall", "dhcp-server", "dhcp-client", 
+        "dns", "arp", "service", "neighbor", "proxy"
+    };
+    
+    // Interface sections should not have nested interfaces
+    bool is_parent_interface = true;
+    for (const auto& valid_name : valid_subsections) {
+        if (parent_name == valid_name) {
+            is_parent_interface = false;
+            break;
+        }
+    }
+    
+    if (is_parent_interface) {
+        // Exception for template/group sections
+        if (parent_name == "template" || parent_name == "group") {
+            return true;
+        }
+        return false; // No nesting for interface sections
+    }
+    
+    // Allow nesting for standard subsections like route, dns, etc.
+    return true;
 }
