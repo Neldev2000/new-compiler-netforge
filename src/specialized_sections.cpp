@@ -258,7 +258,7 @@ std::string InterfacesSection::process_interface_section(const SectionStatement*
     
     // Generate commands based on interface type
     if (type == "ethernet") {
-        result += "/interface set ethernet " + interface_name;
+        result += "/interface ethernet set " + interface_name;
         if (!mtu.empty()) result += " mtu=" + mtu;
         if (!disabled.empty()) result += " disabled=" + disabled;
         if (!mac_address.empty()) result += " mac-address=" + mac_address;
@@ -1015,7 +1015,7 @@ std::string FirewallSection::translate_section(const std::string& ident) const {
                                                     bool first = true;
                                                     
                                                     while (ss >> state) {
-                                                        // Remove quotes and commas
+                                                        // Clean up state - remove quotes and commas
                                                         state.erase(remove(state.begin(), state.end(), '"'), state.end());
                                                         state.erase(remove(state.begin(), state.end(), ','), state.end());
                                                         
@@ -1058,7 +1058,20 @@ std::string FirewallSection::translate_section(const std::string& ident) const {
                                     
                                     // Add optional parameters
                                     if (!connection_state.empty()) {
-                                        result += " connection-state=" + connection_state;
+                                        // Clean up connection_state - remove quotes and braces
+                                        std::string clean_conn_state;
+                                        bool in_quote = false;
+                                        
+                                        for (size_t i = 0; i < connection_state.size(); i++) {
+                                            char c = connection_state[i];
+                                            // Skip braces, quotes, and spaces
+                                            if (c == '{' || c == '}' || c == '"' || (c == ' ' && !in_quote)) {
+                                                continue;
+                                            }
+                                            clean_conn_state += c;
+                                        }
+                                        
+                                        result += " connection-state=" + clean_conn_state;
                                     }
                                     if (!protocol.empty()) {
                                         result += " protocol=" + protocol;
