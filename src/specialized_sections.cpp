@@ -169,7 +169,7 @@ std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
     
     // Define valid interface properties based on the MikroTik RouterOS documentation
     const std::set<std::string> common_valid_props = {
-        "name", "type", "mtu", "disabled", "admin_state", "mac_address", "mac", 
+        "type", "mtu", "disabled", "admin_state", "mac_address", "mac", 
         "comment", "description", "lists", "arp"
     };
     
@@ -189,7 +189,7 @@ std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
         "advertise", "auto-negotiation", "speed", "duplex"
     };
     
-    bool has_name = false;
+
     bool has_type = false;
     std::string interface_type = "";
     
@@ -216,9 +216,7 @@ std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
             
             // Check if this is a common valid property
             if (common_valid_props.find(name) != common_valid_props.end()) {
-                if (name == "name" && expr) {
-                    has_name = true;
-                } else if (name == "type" && expr) {
+                if (name == "type" && expr) {
                     has_type = true;
                     
                     const StringValue* type_value = dynamic_cast<const StringValue*>(expr);
@@ -255,9 +253,6 @@ std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
             }
         }
     }
-    
-    // All interfaces should have a name
-    if (!has_name) return {false, "Interface is missing required 'name' property"};
     
     // For VLAN, check if parent interface and VLAN ID exist
     if (interface_type == "vlan") {

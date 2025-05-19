@@ -1,5 +1,5 @@
 # Device Configuration
-/system identity set name="mikrotik_hAPac2"
+/system identity set name="mikrotik_Nelson-Johan_hAPac2"
 # Interface Configuration
 /interface set ethernet ether1 disabled=no
 /interface set ethernet ether2 disabled=no comment="WAN Connection"
