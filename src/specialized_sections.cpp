@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <set>
 #include <regex>
+#include "section_validator.hpp"
 
 // SpecializedSection implementation
 SpecializedSection::SpecializedSection(std::string_view name) noexcept
@@ -24,55 +25,9 @@ DeviceSection::DeviceSection(std::string_view name) noexcept
 }
 
 std::tuple<bool, std::string> DeviceSection::validate() const noexcept {
-    // Validate device section - requires vendor, model, and hostname
-    const BlockStatement* block = get_block();
-    if (!block) 
-        return {false, "Device section is missing a block statement"};
-    
-    bool has_vendor = false;
-    bool has_model = false;
-    bool has_hostname = false;
-    
-    // Check if required properties exist and ensure no other properties are present
-    for (const Statement* stmt : block->get_statements()) {
-        const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(stmt);
-        if (prop) {
-            const std::string& name = prop->get_name();
-            Expression* expr = prop->get_value();
-            
-            if (name == "vendor" && expr) {
-                const StringValue* value = dynamic_cast<const StringValue*>(expr);
-                if (value) has_vendor = true;
-            }
-            else if (name == "model" && expr) {
-                const StringValue* value = dynamic_cast<const StringValue*>(expr);
-                if (value) has_model = true;
-            }
-            else if (name == "hostname" && expr) {
-                const StringValue* value = dynamic_cast<const StringValue*>(expr);
-                if (value) has_hostname = true;
-            }
-            else {
-                // Invalid property found - only hostname, vendor, and model are allowed
-                return {false, "Device section contains invalid property: " + name + 
-                              ". Only 'hostname', 'vendor', and 'model' are allowed" + stmt->to_string()};
-            }
-        }
-        else {
-            // Non-property statement found in device section
-            return {false, "Device section contains an invalid statement type. Only property statements are allowed"};
-        }
-    }
-    
-    // Ensure all required properties are present
-    if (!has_vendor) 
-        return {false, "Device section is missing required 'vendor' property"};
-    if (!has_model) 
-        return {false, "Device section is missing required 'model' property"};
-    if (!has_hostname) 
-        return {false, "Device section is missing required 'hostname' property"};
-    
-    return {true, ""};
+    DeviceValidator validator;
+    return validator.validate(get_block());
+
 }
 
 std::string DeviceSection::translate_section(const std::string& ident) const {
@@ -162,6 +117,14 @@ InterfacesSection::InterfacesSection(std::string_view name) noexcept
 
 
 }
+// Helper function declaration for validating interface properties
+std::tuple<bool, std::string> validateInterfaceProperties(
+    const SectionStatement* interface_section,
+    const std::set<std::string>& common_valid_props,
+    const std::set<std::string>& vlan_specific_props,
+    const std::set<std::string>& bonding_specific_props,
+    const std::set<std::string>& bridge_specific_props,
+    const std::set<std::string>& ethernet_specific_props);
 
 std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
     const BlockStatement* block = get_block();
@@ -189,24 +152,88 @@ std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
         "advertise", "auto-negotiation", "speed", "duplex"
     };
     
+    // Keep track of top-level interfaces to validate hierarchy
+    std::set<std::string> top_level_interfaces;
+    
+    // First pass: Validate each interface section and establish the top-level interfaces
+    for (const Statement* stmt : block->get_statements()) {
+        const SectionStatement* subsection = dynamic_cast<const SectionStatement*>(stmt);
+        
+        if (subsection) {
+            // Add to our list of top-level interfaces
+            top_level_interfaces.insert(subsection->get_name());
+            
+            // Recursively validate this interface's properties
+            auto [valid, message] = validateInterfaceProperties(subsection, common_valid_props, 
+                                                              vlan_specific_props, bonding_specific_props,
+                                                              bridge_specific_props, ethernet_specific_props);
+            if (!valid) {
+                return {false, message};
+            }
+            
+            // Check for nested interface definitions (which are invalid at this level)
+            const BlockStatement* interface_block = subsection->get_block();
+            if (interface_block) {
+                for (const Statement* nested_stmt : interface_block->get_statements()) {
+                    // If we find a nested SectionStatement, this means we have an interface defined
+                    // under another interface, which is semantically incorrect (except for special cases)
+                    const SectionStatement* nested_section = dynamic_cast<const SectionStatement*>(nested_stmt);
+                    if (nested_section) {
+                        const std::string& parent_name = subsection->get_name();
+                        const std::string& child_name = nested_section->get_name();
+                        
+                        // Here we check if this is a valid nested interface relationship
+                        // Currently, most interface types should not have nested interfaces
+                        // Examples where nesting might be valid: configuration groups, profiles, etc.
+                        bool valid_nesting = false;
+                        
+                        // Add exceptions here if needed (e.g., if virtual interfaces under bridge were valid)
+                        if (parent_name == "template" || parent_name == "group") {
+                            valid_nesting = true;
+                        }
+                        
+                        if (!valid_nesting) {
+                            return {false, "Semantic error: Interface '" + child_name + 
+                                   "' cannot be defined under interface '" + parent_name + 
+                                   "'. Each interface must be defined at the top level."};
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return {true, ""};
+}
 
+// Helper function to validate interface properties
+std::tuple<bool, std::string> validateInterfaceProperties(
+    const SectionStatement* interface_section,
+    const std::set<std::string>& common_valid_props,
+    const std::set<std::string>& vlan_specific_props,
+    const std::set<std::string>& bonding_specific_props,
+    const std::set<std::string>& bridge_specific_props,
+    const std::set<std::string>& ethernet_specific_props) {
+    
     bool has_type = false;
     std::string interface_type = "";
+    const BlockStatement* block = interface_section->get_block();
+    
+    if (!block) {
+        return std::make_tuple(false, "Interface section '" + interface_section->get_name() + "' is missing a block statement");
+    }
     
     // Check for required properties and validate all properties
     for (const Statement* stmt : block->get_statements()) {
         const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(stmt);
         const SectionStatement* subsection = dynamic_cast<const SectionStatement*>(stmt);
         
+        // Skip subsections as they are validated separately
+        if (subsection) continue;
+        
         // Non-property, non-section statement found (invalid)
         if (!prop && !subsection) {
-            return {false, "Interface section contains an invalid statement type"};
-        }
-        
-        // Check subsections - only valid if they're interface definitions
-        if (subsection) {
-            // Valid subsections will be checked separately
-            continue;
+            return std::make_tuple(false, "Interface section contains an invalid statement type");
         }
         
         // Process properties
@@ -248,8 +275,8 @@ std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
             }
             // Invalid property found
             else {
-                return {false, "Interface section contains invalid property '" + name + 
-                       "'. This property is not valid for interface configuration."};
+                return std::make_tuple(false, "Interface section contains invalid property '" + name + 
+                       "'. This property is not valid for interface configuration.");
             }
         }
     }
@@ -273,8 +300,8 @@ std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
             }
         }
         
-        if (!has_vlan_id) return {false, "VLAN interface is missing required 'vlan_id' property"};
-        if (!has_parent) return {false, "VLAN interface is missing required 'interface' property"};
+        if (!has_vlan_id) return std::make_tuple(false, "VLAN interface is missing required 'vlan_id' property");
+        if (!has_parent) return std::make_tuple(false, "VLAN interface is missing required 'interface' property");
     }
     
     // For bonding, check if mode and slaves are set
@@ -296,13 +323,12 @@ std::tuple<bool, std::string> InterfacesSection::validate() const noexcept {
             }
         }
         
-        if (!has_mode) return {false, "Bonding interface is missing required 'mode' property"};
-        if (!has_slaves) return {false, "Bonding interface is missing required 'slaves' property"};
+        if (!has_mode) return std::make_tuple(false, "Bonding interface is missing required 'mode' property");
+        if (!has_slaves) return std::make_tuple(false, "Bonding interface is missing required 'slaves' property");
     }
     
-    return {true, ""};
+    return std::make_tuple(true, "");
 }
-
 std::string InterfacesSection::translate_section(const std::string& ident) const {
     std::string result = "# Interface Configuration\n";
 
@@ -591,6 +617,9 @@ std::tuple<bool, std::string> IPSection::validate() const noexcept {
         "dns-server", "allow-remote-requests"
     };
     
+    // Keep track of top-level interfaces to validate hierarchy
+    std::set<std::string> top_level_interfaces;
+    
     // Iterate through statements
     for (const Statement* stmt : block->get_statements()) {
         // Check for subsections (most common in IP)
@@ -611,6 +640,9 @@ std::tuple<bool, std::string> IPSection::validate() const noexcept {
             
             // Validate interface address assignments
             if (is_interface_section) {
+                // Add to our list of top-level interfaces
+                top_level_interfaces.insert(section_name);
+                
                 // This is likely an interface name - validate its properties
                 if (!subsection->get_block()) {
                     return {false, "IP interface section '" + section_name + "' is missing its block"};
@@ -620,6 +652,28 @@ std::tuple<bool, std::string> IPSection::validate() const noexcept {
                 
                 // Check properties
                 for (const Statement* if_stmt : subsection->get_block()->get_statements()) {
+                    // Check for nested interface definitions (which are invalid at this level)
+                    const SectionStatement* nested_section = dynamic_cast<const SectionStatement*>(if_stmt);
+                    if (nested_section) {
+                        const std::string& parent_name = section_name;
+                        const std::string& child_name = nested_section->get_name();
+                        
+                        // Here we check if this is a valid nested interface relationship
+                        // In IP section, interfaces should not be nested
+                        bool valid_nesting = false;
+                        
+                        // Add exceptions here if needed
+                        if (parent_name == "template" || parent_name == "group") {
+                            valid_nesting = true;
+                        }
+                        
+                        if (!valid_nesting) {
+                            return {false, "Semantic error: Interface '" + child_name + 
+                                  "' cannot be defined under interface '" + parent_name + 
+                                  "' in IP section. Each interface must be defined at the top level."};
+                        }
+                    }
+                    
                     const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(if_stmt);
                     if (prop) {
                         const std::string& prop_name = prop->get_name();
