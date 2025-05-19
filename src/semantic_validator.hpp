@@ -1,4 +1,5 @@
 #pragma once
+
 #include <string>
 #include <tuple>
 #include <set>
@@ -6,12 +7,14 @@
 #include <memory>
 #include <unordered_map>
 
+#include "statement.hpp"
+
 // Forward declarations
 class SectionStatement;
 class BlockStatement;
 class PropertyStatement;
 class Statement;
-class Expression;
+
 
 /**
  * @class SectionValidator
@@ -86,8 +89,14 @@ private:
     std::tuple<bool, std::string> validateHierarchy(const BlockStatement* block) const;
 };
 
-
-/*
+class DeviceValidator : public SectionValidator {
+public:
+    DeviceValidator();
+    
+protected:
+    std::tuple<bool, std::string> validateProperties(
+        const SectionStatement* section) const override;
+};
 /**
  * @class InterfacesValidator
  * @brief Validator for Interfaces section
@@ -163,4 +172,3 @@ protected:
     std::tuple<bool, std::string> validateProperties(
         const SectionStatement* section) const override;
 };
-*/

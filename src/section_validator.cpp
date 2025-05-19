@@ -1,3 +1,4 @@
+/*
 #include "section_validator.hpp"
 #include "specialized_sections.hpp"
 // Base SectionValidator implementation
@@ -172,3 +173,4 @@ std::tuple<bool, std::string> InterfacesValidator::validateProperties(
     // Add implementation here if needed
     return std::make_tuple(true, "");
 }
+*/

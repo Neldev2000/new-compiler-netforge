@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <set>
 #include <regex>
-#include "section_validator.hpp"
+#include "semantic_validator.hpp"
 
 // SpecializedSection implementation
 SpecializedSection::SpecializedSection(std::string_view name) noexcept
