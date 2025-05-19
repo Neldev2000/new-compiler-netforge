@@ -55,7 +55,7 @@ std::tuple<bool, std::string> DeviceSection::validate() const noexcept {
             else {
                 // Invalid property found - only hostname, vendor, and model are allowed
                 return {false, "Device section contains invalid property: " + name + 
-                              ". Only 'hostname', 'vendor', and 'model' are allowed"};
+                              ". Only 'hostname', 'vendor', and 'model' are allowed" + stmt->to_string()};
             }
         }
         else {

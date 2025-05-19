@@ -1,7 +1,7 @@
 device:
     vendor = "mikrotik"
     model="hAPac2"
-    hostname = "Nelson-Johan"
+    hostname="Nelson-Johan"
 
 
 interfaces:

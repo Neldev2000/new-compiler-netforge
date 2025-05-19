@@ -213,6 +213,7 @@ IPV6_RANGE      {IPV6_ADDRESS}\-{IPV6_ADDRESS}
 "device"        { return TOKEN_DEVICE; }
 "vendor"        { return TOKEN_VENDOR; }
 "model"         { return TOKEN_MODEL; }
+"hostname"      { return TOKEN_HOSTNAME;}
 "interfaces"    { return TOKEN_INTERFACES; }
 "ip"            { return TOKEN_IP; }
 "routing"       { return TOKEN_ROUTING; }
