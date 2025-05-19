@@ -89,7 +89,7 @@ SectionStatement::SectionType get_section_type(const char* section_name) {
 %type <str_val> property_name section_name identifier
 %type <program_val> config
 %type <section_val> section section_list
-%type <block_val> block statement_list indented_block
+%type <block_val> statement_list indented_block
 %type <stmt_val> statement subsection
 %type <value_val> simple_value value_item
 %type <list_val> list_value
@@ -155,18 +155,6 @@ section_name
     | TOKEN_ROUTING { $$ = "routing"; }
     | TOKEN_FIREWALL { $$ = "firewall"; }
     | TOKEN_SYSTEM { $$ = "system"; }
-    ;
-
-block
-    : /* empty */ {
-        $$ = new BlockStatement();
-    }
-    | TOKEN_LEFT_BRACE statement_list TOKEN_RIGHT_BRACE {
-        $$ = $2;
-    }
-    | statement_list {
-        $$ = $1;
-    }
     ;
 
 indented_block
