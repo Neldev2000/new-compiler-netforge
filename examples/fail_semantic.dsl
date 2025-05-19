@@ -8,8 +8,8 @@ interfaces:
     eth1:
         description="This is a bridge for eth1 and eth2"
         admin_state="enabled"
-    eth3:
-        address = 192.168.1.1/30
+        eth3:
+            address = 192.168.1.1/30
 
 ip:
     bridge:

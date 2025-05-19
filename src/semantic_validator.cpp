@@ -158,4 +158,160 @@ std::tuple<bool, std::string> DeviceValidator::validateProperties(
         return {false, "Device section is missing required 'hostname' property"};
 
     return std::make_tuple(true, "");
+}
+
+InterfacesValidator::InterfacesValidator()
+    : SectionValidator("interfaces", NestingRule::CONDITIONAL_NESTING) {
+    // Initialize the sets of valid properties for different interface types
+    common_valid_props_ = {
+        "type", "mtu", "disabled", "admin_state", "mac_address", "mac", 
+        "comment", "description", "lists", "arp"
+    };
+    
+    vlan_specific_props_ = {
+        "vlan_id", "interface"
+    };
+    
+    bonding_specific_props_ = {
+        "mode", "slaves"
+    };
+    
+    bridge_specific_props_ = {
+        "protocol-mode", "fast-forward", "ports"
+    };
+    
+    ethernet_specific_props_ = {
+        "advertise", "auto-negotiation", "speed", "duplex"
+    };
+}
+
+std::tuple<bool, std::string> InterfacesValidator::validateProperties(
+    const SectionStatement* section) const {
+    
+    bool has_type = false;
+    std::string interface_type = "";
+    const BlockStatement* block = section->get_block();
+    
+    if (!block) {
+        return std::make_tuple(false, "Interface section '" + section->get_name() + "' is missing a block statement");
     }
+    
+    // Check for required properties and validate all properties
+    for (const Statement* stmt : block->get_statements()) {
+        const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(stmt);
+        const SectionStatement* subsection = dynamic_cast<const SectionStatement*>(stmt);
+        
+        // Skip subsections as they are validated separately
+        if (subsection) continue;
+        
+        // Non-property, non-section statement found (invalid)
+        if (!prop && !subsection) {
+            return std::make_tuple(false, "Interface section contains an invalid statement type");
+        }
+        
+        // Process properties
+        if (prop) {
+            const std::string& name = prop->get_name();
+            Expression* expr = prop->get_value();
+            
+            // Check if this is a common valid property
+            if (common_valid_props_.find(name) != common_valid_props_.end()) {
+                if (name == "type" && expr) {
+                    has_type = true;
+                    
+                    const StringValue* type_value = dynamic_cast<const StringValue*>(expr);
+                    if (type_value) {
+                        interface_type = type_value->get_value();
+                        // Remove quotes if present
+                        if (interface_type.size() >= 2 && interface_type.front() == '"' && interface_type.back() == '"') {
+                            interface_type = interface_type.substr(1, interface_type.size() - 2);
+                        }
+                    }
+                }
+            }
+            // Check for VLAN-specific properties
+            else if (interface_type == "vlan" && vlan_specific_props_.find(name) != vlan_specific_props_.end()) {
+                // Valid VLAN property
+            }
+            // Check for bonding-specific properties
+            else if (interface_type == "bonding" && bonding_specific_props_.find(name) != bonding_specific_props_.end()) {
+                // Valid bonding property
+            } 
+            // Check for bridge-specific properties
+            else if (interface_type == "bridge" && bridge_specific_props_.find(name) != bridge_specific_props_.end()) {
+                // Valid bridge property
+            }
+            // Check for ethernet-specific properties
+            else if ((interface_type == "ethernet" || interface_type.empty()) && 
+                    ethernet_specific_props_.find(name) != ethernet_specific_props_.end()) {
+                // Valid ethernet property
+            }
+            // Invalid property found
+            else {
+                return std::make_tuple(false, "Interface section contains invalid property '" + name + 
+                    "'. This property is not valid for interface configuration.");
+            }
+        }
+    }
+    
+    // For VLAN, check if parent interface and VLAN ID exist
+    if (interface_type == "vlan") {
+        bool has_vlan_id = false;
+        bool has_parent = false;
+        
+        for (const Statement* stmt : block->get_statements()) {
+            const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(stmt);
+            if (prop) {
+                const std::string& name = prop->get_name();
+                Expression* expr = prop->get_value();
+                
+                if (name == "vlan_id" && expr) {
+                    has_vlan_id = true;
+                } else if (name == "interface" && expr) {
+                    has_parent = true;
+                }
+            }
+        }
+        
+        if (!has_vlan_id) return std::make_tuple(false, "VLAN interface is missing required 'vlan_id' property");
+        if (!has_parent) return std::make_tuple(false, "VLAN interface is missing required 'interface' property");
+    }
+    
+    // For bonding, check if mode and slaves are set
+    if (interface_type == "bonding") {
+        bool has_mode = false;
+        bool has_slaves = false;
+        
+        for (const Statement* stmt : block->get_statements()) {
+            const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(stmt);
+            if (prop) {
+                const std::string& name = prop->get_name();
+                Expression* expr = prop->get_value();
+                
+                if (name == "mode" && expr) {
+                    has_mode = true;
+                } else if (name == "slaves" && expr) {
+                    has_slaves = true;
+                }
+            }
+        }
+        
+        if (!has_mode) return std::make_tuple(false, "Bonding interface is missing required 'mode' property");
+        if (!has_slaves) return std::make_tuple(false, "Bonding interface is missing required 'slaves' property");
+    }
+    
+    return std::make_tuple(true, "");
+}
+
+bool InterfacesValidator::isValidNesting(const std::string& parent_name, 
+                                       const std::string& child_name) const {
+    // Most interface types should not have nested interfaces
+    // Exceptions: configuration groups, profiles, templates
+    
+    if (parent_name == "template" || parent_name == "group") {
+        return true;
+    }
+    
+    // By default, don't allow nesting for interfaces
+    return false;
+}
