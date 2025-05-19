@@ -1,6 +1,6 @@
 """ 
     ERROR SINTACTICO:
-    Las secciones y subsecciones deben comenzarse con `=` no con `=`
+    Las secciones y subsecciones deben comenzarse con `:` no con `=`
 """ 
 device=
     vendor   = "mikrotik"
