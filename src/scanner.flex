@@ -264,6 +264,11 @@ IPV6_RANGE      {IPV6_ADDRESS}\-{IPV6_ADDRESS}
 "to-addresses"  { return TOKEN_TO_ADDRESSES; }
 "to_ports"      { return TOKEN_TO_PORTS; }
 "to-ports"      { return TOKEN_TO_PORTS; }
+"mode"          { return TOKEN_MODE; }
+"slaves"        { return TOKEN_SLAVES; }
+"protocol"      { return TOKEN_PROTOCOL; }
+"distance"      { return TOKEN_DISTANCE; }
+"mtu"           { return TOKEN_MTU; }
 
 {IPV6_CIDR}     { yylval.str_val = strdup(yytext); return TOKEN_IPV6_CIDR; }
 {IPV6_RANGE}    { yylval.str_val = strdup(yytext); return TOKEN_IPV6_RANGE; }

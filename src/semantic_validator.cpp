@@ -543,6 +543,7 @@ std::tuple<bool, std::string> RoutingValidator::validateProperties(
     
     // Define valid properties for static routes
     const std::set<std::string> valid_route_props = {
+        "src_address", "src", "src-address", "src-address",
         "destination", "dst-address", "dst",       // Destination network
         "gateway", "gw",                          // Next hop
         "distance",                               // Administrative distance

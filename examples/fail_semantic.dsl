@@ -8,6 +8,7 @@ interfaces:
     eth1:
         description="This is a bridge for eth1 and eth2"
         admin_state="enabled"
+        # SEMANTINC ERROR: Both interface cannot be nested
         eth3:
             address = 192.168.1.1/30
 

@@ -75,6 +75,7 @@ SectionStatement::SectionType get_section_type(const char* section_name) {
 %token TOKEN_ACCEPT TOKEN_DROP TOKEN_REJECT
 %token TOKEN_OUT_INTERFACE TOKEN_IN_INTERFACE TOKEN_SRC_ADDRESS TOKEN_DST_ADDRESS
 %token TOKEN_SRC_PORT TOKEN_DST_PORT TOKEN_TO_ADDRESSES TOKEN_TO_PORTS
+%token TOKEN_MODE TOKEN_SLAVES TOKEN_PROTOCOL TOKEN_DISTANCE TOKEN_MTU
 
 /* Literal tokens */
 %token <str_val> TOKEN_IDENTIFIER TOKEN_STRING TOKEN_BOOL
@@ -256,6 +257,11 @@ property_name
     | TOKEN_DST_PORT { $$ = "dst_port"; }
     | TOKEN_TO_ADDRESSES { $$ = "to_addresses"; }
     | TOKEN_TO_PORTS { $$ = "to_ports"; }
+    | TOKEN_MODE { $$ = "mode"; }
+    | TOKEN_SLAVES { $$ = "slaves"; }
+    | TOKEN_PROTOCOL { $$ = "protocol"; }
+    | TOKEN_DISTANCE { $$ = "distance"; }
+    | TOKEN_MTU { $$ = "mtu"; }
     ;
 
 /* Generic identifier for tokens that can appear before colon */
