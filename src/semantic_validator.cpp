@@ -766,3 +766,347 @@ bool RoutingValidator::isValidNesting(const std::string& parent_name,
     // For regular routes - no nesting allowed
     return false;
 }
+
+FirewallValidator::FirewallValidator()
+    : SectionValidator("firewall", NestingRule::CONDITIONAL_NESTING) {
+}
+
+std::tuple<bool, std::string> FirewallValidator::validateProperties(
+    const SectionStatement* section) const {
+    
+    // Define valid subsections in a firewall configuration
+    const std::set<std::string> valid_subsections = {
+        "filter", "nat", "mangle", "raw", "address-list", "service-port", "layer7-protocol"
+    };
+    
+    // Define valid filter chains
+    const std::set<std::string> valid_filter_chains = {
+        "input", "forward", "output"
+    };
+    
+    // Define valid NAT chains
+    const std::set<std::string> valid_nat_chains = {
+        "srcnat", "dstnat", "prerouting", "postrouting"
+    };
+    
+    // Define valid actions for filter rules
+    const std::set<std::string> valid_filter_actions = {
+        "accept", "drop", "reject", "log", "tarpit", "jump", "fasttrack-connection",
+        "add-src-to-address-list", "add-dst-to-address-list"
+    };
+    
+    // Define valid actions for NAT rules
+    const std::set<std::string> valid_nat_actions = {
+        "accept", "drop", "masquerade", "redirect", "dst-nat", "src-nat", "same", "netmap"
+    };
+    
+    // Define valid common properties for all rule types
+    const std::set<std::string> common_rule_props = {
+        "chain", "action", "protocol", "src-address", "dst-address", 
+        "src-port", "dst-port", "in-interface", "out-interface", 
+        "src_address", "dst_address", "src_port", "dst_port", 
+        "in_interface", "out_interface", "comment"
+    };
+    
+    // Define connection-state related properties
+    const std::set<std::string> connection_state_props = {
+        "connection-state", "connection_state"
+    };
+    
+    // Define valid connection states
+    const std::set<std::string> valid_connection_states = {
+        "established", "related", "new", "invalid"
+    };
+    
+    // Define NAT specific properties
+    const std::set<std::string> nat_specific_props = {
+        "to-addresses", "to-ports", "to_addresses", "to_ports"
+    };
+    
+    // If this is a top-level firewall section, validate its subsections
+    if (section->get_block()) {
+        // We're simply checking if the name is one of the valid top-level firewall sections
+        std::string section_name = section->get_name();
+        
+        // Not a top-level section? Check if it's a filter rule or NAT rule
+        if (section_name == "filter") {
+            // Validate filter rule
+            const BlockStatement* block = section->get_block();
+            if (!block) {
+                return {false, "Filter section is missing its block"};
+            }
+            
+            for (const auto* rule_stmt : block->get_statements()) {
+                const SectionStatement* rule = dynamic_cast<const SectionStatement*>(rule_stmt);
+                if (!rule) {
+                    return {false, "Filter section can only contain rule subsections"};
+                }
+                
+                const BlockStatement* rule_block = rule->get_block();
+                if (!rule_block) {
+                    return {false, "Filter rule '" + rule->get_name() + "' is missing its block"};
+                }
+                
+                bool has_chain = false;
+                bool has_action = false;
+                std::string chain_value;
+                std::string action_value;
+                
+                // Validate rule properties
+                for (const auto* prop_stmt : rule_block->get_statements()) {
+                    const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(prop_stmt);
+                    if (!prop) {
+                        continue;
+                    }
+                    
+                    std::string prop_name = prop->get_name();
+                    
+                    // Check if property is valid for filter rule
+                    if (common_rule_props.find(prop_name) == common_rule_props.end() && 
+                        connection_state_props.find(prop_name) == connection_state_props.end()) {
+                        return {false, "Invalid property '" + prop_name + "' in filter rule '" + 
+                                     rule->get_name() + "'"};
+                    }
+                    
+                    // Validate chain
+                    if (prop_name == "chain") {
+                        has_chain = true;
+                        if (prop->get_value()) {
+                            const StringValue* chain_str = dynamic_cast<const StringValue*>(prop->get_value());
+                            if (chain_str) {
+                                chain_value = chain_str->get_value();
+                                // Remove quotes if present
+                                if (chain_value.size() >= 2 && chain_value.front() == '"' && chain_value.back() == '"') {
+                                    chain_value = chain_value.substr(1, chain_value.size() - 2);
+                                }
+                                
+                                if (valid_filter_chains.find(chain_value) == valid_filter_chains.end()) {
+                                    return {false, "Invalid filter chain '" + chain_value + 
+                                                 "'. Valid chains are: input, forward, output"};
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Validate action
+                    if (prop_name == "action") {
+                        has_action = true;
+                        if (prop->get_value()) {
+                            const StringValue* action_str = dynamic_cast<const StringValue*>(prop->get_value());
+                            if (action_str) {
+                                action_value = action_str->get_value();
+                                // Remove quotes if present
+                                if (action_value.size() >= 2 && action_value.front() == '"' && action_value.back() == '"') {
+                                    action_value = action_value.substr(1, action_value.size() - 2);
+                                }
+                                
+                                if (valid_filter_actions.find(action_value) == valid_filter_actions.end()) {
+                                    return {false, "Invalid filter action '" + action_value + 
+                                                 "'. Valid actions are: accept, drop, reject, etc."};
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Validate connection-state if present
+                    if (prop_name == "connection_state" || prop_name == "connection-state") {
+                        if (prop->get_value()) {
+                            // Could be a string or a list
+                            const StringValue* state_str = dynamic_cast<const StringValue*>(prop->get_value());
+                            const ListValue* state_list = dynamic_cast<const ListValue*>(prop->get_value());
+                            
+                            if (state_str) {
+                                std::string state = state_str->get_value();
+                                // Remove quotes if present
+                                if (state.size() >= 2 && state.front() == '"' && state.back() == '"') {
+                                    state = state.substr(1, state.size() - 2);
+                                }
+                                
+                                if (valid_connection_states.find(state) == valid_connection_states.end()) {
+                                    return {false, "Invalid connection state '" + state + 
+                                                 "'. Valid states are: established, related, new, invalid"};
+                                }
+                            } else if (state_list) {
+                                // Validate each state in the list
+                                for (const auto* state_value : state_list->get_values()) {
+                                    const StringValue* state_str = dynamic_cast<const StringValue*>(state_value);
+                                    if (state_str) {
+                                        std::string state = state_str->get_value();
+                                        // Remove quotes if present
+                                        if (state.size() >= 2 && state.front() == '"' && state.back() == '"') {
+                                            state = state.substr(1, state.size() - 2);
+                                        }
+                                        
+                                        if (valid_connection_states.find(state) == valid_connection_states.end()) {
+                                            return {false, "Invalid connection state '" + state + 
+                                                         "' in list. Valid states are: established, related, new, invalid"};
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Ensure required properties are present
+                if (!has_chain) {
+                    return {false, "Filter rule '" + rule->get_name() + "' is missing required 'chain' property"};
+                }
+                
+                if (!has_action) {
+                    return {false, "Filter rule '" + rule->get_name() + "' is missing required 'action' property"};
+                }
+            }
+        }
+        // Validate NAT rules
+        else if (section_name == "nat") {
+            const BlockStatement* block = section->get_block();
+            if (!block) {
+                return {false, "NAT section is missing its block"};
+            }
+            
+            for (const auto* rule_stmt : block->get_statements()) {
+                const SectionStatement* rule = dynamic_cast<const SectionStatement*>(rule_stmt);
+                if (!rule) {
+                    return {false, "NAT section can only contain rule subsections"};
+                }
+                
+                const BlockStatement* rule_block = rule->get_block();
+                if (!rule_block) {
+                    return {false, "NAT rule '" + rule->get_name() + "' is missing its block"};
+                }
+                
+                bool has_chain = false;
+                bool has_action = false;
+                std::string chain_value;
+                std::string action_value;
+                
+                // Validate rule properties
+                for (const auto* prop_stmt : rule_block->get_statements()) {
+                    const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(prop_stmt);
+                    if (!prop) {
+                        continue;
+                    }
+                    
+                    std::string prop_name = prop->get_name();
+                    
+                    // Check if property is valid for NAT rule
+                    if (common_rule_props.find(prop_name) == common_rule_props.end() && 
+                        nat_specific_props.find(prop_name) == nat_specific_props.end()) {
+                        return {false, "Invalid property '" + prop_name + "' in NAT rule '" + 
+                                     rule->get_name() + "'"};
+                    }
+                    
+                    // Validate chain
+                    if (prop_name == "chain") {
+                        has_chain = true;
+                        if (prop->get_value()) {
+                            const StringValue* chain_str = dynamic_cast<const StringValue*>(prop->get_value());
+                            if (chain_str) {
+                                chain_value = chain_str->get_value();
+                                // Remove quotes if present
+                                if (chain_value.size() >= 2 && chain_value.front() == '"' && chain_value.back() == '"') {
+                                    chain_value = chain_value.substr(1, chain_value.size() - 2);
+                                }
+                                
+                                if (valid_nat_chains.find(chain_value) == valid_nat_chains.end()) {
+                                    return {false, "Invalid NAT chain '" + chain_value + 
+                                                 "'. Valid chains are: srcnat, dstnat, prerouting, postrouting"};
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Validate action
+                    if (prop_name == "action") {
+                        has_action = true;
+                        if (prop->get_value()) {
+                            const StringValue* action_str = dynamic_cast<const StringValue*>(prop->get_value());
+                            if (action_str) {
+                                action_value = action_str->get_value();
+                                // Remove quotes if present
+                                if (action_value.size() >= 2 && action_value.front() == '"' && action_value.back() == '"') {
+                                    action_value = action_value.substr(1, action_value.size() - 2);
+                                }
+                                
+                                if (valid_nat_actions.find(action_value) == valid_nat_actions.end()) {
+                                    return {false, "Invalid NAT action '" + action_value + 
+                                                 "'. Valid actions are: masquerade, dst-nat, src-nat, etc."};
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Ensure required properties are present
+                if (!has_chain) {
+                    return {false, "NAT rule '" + rule->get_name() + "' is missing required 'chain' property"};
+                }
+                
+                if (!has_action) {
+                    return {false, "NAT rule '" + rule->get_name() + "' is missing required 'action' property"};
+                }
+                
+                // Check specific requirements for certain NAT actions
+                if (action_value == "masquerade") {
+                    bool has_out_interface = false;
+                    for (const auto* prop_stmt : rule_block->get_statements()) {
+                        const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(prop_stmt);
+                        if (prop && (prop->get_name() == "out_interface" || prop->get_name() == "out-interface")) {
+                            has_out_interface = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!has_out_interface) {
+                        return {false, "NAT rule with 'masquerade' action requires 'out_interface' property"};
+                    }
+                }
+            }
+        }
+        // Validation for other subsections can be added here
+    }
+    
+    return {true, ""};
+}
+
+bool FirewallValidator::isValidNesting(const std::string& parent_name, 
+                                     const std::string& child_name) const {
+    // Define valid firewall subsections
+    const std::set<std::string> valid_subsections = {
+        "filter", "nat", "mangle", "raw", "address-list", "service-port", "layer7-protocol"
+    };
+    
+    // Check if parent is a standard subsection
+    bool is_standard_subsection = false;
+    for (const auto& valid_name : valid_subsections) {
+        if (parent_name == valid_name) {
+            is_standard_subsection = true;
+            break;
+        }
+    }
+    
+    // Exception for template/group sections
+    if (parent_name == "template" || parent_name == "group") {
+        return true;
+    }
+    
+    // For firewall subsections like filter, nat - allow rule children but not deeper nesting
+    if (is_standard_subsection) {
+        // Rules under filter, nat, etc. are allowed
+        return true;
+    }
+    
+    // For rule entries - no nesting allowed
+    return false;
+}
+
+CustomValidator::CustomValidator()
+    : SectionValidator("custom", NestingRule::DEEP_NESTING) {
+}
+
+std::tuple<bool, std::string> CustomValidator::validateProperties(
+    const SectionStatement* section) const {
+    // Custom sections are more permissive
+    return {true, ""};
+}
