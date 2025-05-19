@@ -1131,6 +1131,14 @@ std::tuple<bool, std::string> RoutingSection::validate() const noexcept {
         "suppress-hw-offload"                     // Hardware offload control
     };
     
+    // Define valid routing subsections
+    const std::set<std::string> valid_subsections = {
+        "table", "tables", "rule", "rules", "filter"
+    };
+    
+    // Keep track of top-level routes to validate hierarchy
+    std::set<std::string> top_level_routes;
+    
     bool has_default_gw = false;
     
     // Iterate through statements
@@ -1173,13 +1181,51 @@ std::tuple<bool, std::string> RoutingSection::validate() const noexcept {
         if (subsection) {
             std::string route_name = subsection->get_name();
             
+            // Check if this is a standard subsection type
+            bool is_standard_subsection = false;
+            for (const auto& valid_name : valid_subsections) {
+                if (route_name == valid_name) {
+                    is_standard_subsection = true;
+                    break;
+                }
+            }
+            
             // Table subsections validation
             if (route_name == "table" || route_name == "tables") {
                 if (!subsection->get_block()) {
                     return {false, "Routing table section is missing its block"};
                 }
                 
-                // Validate table entries here if needed
+                // Check for nested sections in tables - no nesting allowed
+                for (const Statement* table_stmt : subsection->get_block()->get_statements()) {
+                    const SectionStatement* table_section = dynamic_cast<const SectionStatement*>(table_stmt);
+                    
+                    if (table_section && table_section->get_block()) {
+                        // Check for nested sections within table entries
+                        for (const Statement* nested_stmt : table_section->get_block()->get_statements()) {
+                            const SectionStatement* nested_section = dynamic_cast<const SectionStatement*>(nested_stmt);
+                            if (nested_section) {
+                                const std::string& parent_name = table_section->get_name();
+                                const std::string& child_name = nested_section->get_name();
+                                
+                                // Check if this is a valid nested relationship - generally not allowed
+                                bool valid_nesting = false;
+                                
+                                // Exception for template/group sections
+                                if (parent_name == "template" || parent_name == "group") {
+                                    valid_nesting = true;
+                                }
+                                
+                                if (!valid_nesting) {
+                                    return {false, "Semantic error: Route entry '" + child_name + 
+                                           "' cannot be defined under table entry '" + parent_name + 
+                                           "'. Each route must be defined at the appropriate level."};
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 continue;
             }
             
@@ -1189,9 +1235,42 @@ std::tuple<bool, std::string> RoutingSection::validate() const noexcept {
                     return {false, "Routing rule section is missing its block"};
                 }
                 
-                // Validate rule entries here if needed
+                // Check for nested sections in rules - no nesting allowed
+                for (const Statement* rule_stmt : subsection->get_block()->get_statements()) {
+                    const SectionStatement* rule_section = dynamic_cast<const SectionStatement*>(rule_stmt);
+                    
+                    if (rule_section && rule_section->get_block()) {
+                        // Check for nested sections within rule entries
+                        for (const Statement* nested_stmt : rule_section->get_block()->get_statements()) {
+                            const SectionStatement* nested_section = dynamic_cast<const SectionStatement*>(nested_stmt);
+                            if (nested_section) {
+                                const std::string& parent_name = rule_section->get_name();
+                                const std::string& child_name = nested_section->get_name();
+                                
+                                // Check if this is a valid nested relationship - generally not allowed
+                                bool valid_nesting = false;
+                                
+                                // Exception for template/group sections
+                                if (parent_name == "template" || parent_name == "group") {
+                                    valid_nesting = true;
+                                }
+                                
+                                if (!valid_nesting) {
+                                    return {false, "Semantic error: Route entry '" + child_name + 
+                                           "' cannot be defined under rule entry '" + parent_name + 
+                                           "'. Each route must be defined at the appropriate level."};
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 continue;
             }
+            
+            // Not a standard subsection, so this is likely a static route entry
+            // Add to our list of top-level routes
+            top_level_routes.insert(route_name);
             
             // Assume this is a static route entry (static_route1, etc.)
             if (!subsection->get_block()) {
@@ -1203,6 +1282,27 @@ std::tuple<bool, std::string> RoutingSection::validate() const noexcept {
             
             // Validate route properties
             for (const Statement* route_stmt : subsection->get_block()->get_statements()) {
+                // Check for nested route definitions (which are invalid)
+                const SectionStatement* nested_section = dynamic_cast<const SectionStatement*>(route_stmt);
+                if (nested_section) {
+                    const std::string& parent_name = route_name;
+                    const std::string& child_name = nested_section->get_name();
+                    
+                    // Check if this is a valid nested relationship - generally not allowed for routes
+                    bool valid_nesting = false;
+                    
+                    // Exception for template/group sections
+                    if (parent_name == "template" || parent_name == "group") {
+                        valid_nesting = true;
+                    }
+                    
+                    if (!valid_nesting) {
+                        return {false, "Semantic error: Route entry '" + child_name + 
+                               "' cannot be defined under route '" + parent_name + 
+                               "'. Each route must be defined at the top level."};
+                    }
+                }
+                
                 const PropertyStatement* route_prop = dynamic_cast<const PropertyStatement*>(route_stmt);
                 if (route_prop) {
                     const std::string& prop_name = route_prop->get_name();
@@ -1590,6 +1690,9 @@ std::tuple<bool, std::string> FirewallSection::validate() const noexcept {
         "to-addresses", "to-ports", "to_addresses", "to_ports"
     };
     
+    // Keep track of top-level firewall sections
+    std::set<std::string> top_level_sections;
+    
     // Iterate through statements
     for (const auto* stmt : block->get_statements()) {
         const SectionStatement* subsection = dynamic_cast<const SectionStatement*>(stmt);
@@ -1603,6 +1706,9 @@ std::tuple<bool, std::string> FirewallSection::validate() const noexcept {
             return {false, "Invalid firewall subsection '" + section_name + 
                           "'. Valid subsections are: filter, nat, mangle, raw, address-list, service-port, layer7-protocol"};
         }
+        
+        // Add to our top level sections
+        top_level_sections.insert(section_name);
         
         // Get the subsection block and validate it
         const BlockStatement* subsection_block = subsection->get_block();
@@ -1628,11 +1734,35 @@ std::tuple<bool, std::string> FirewallSection::validate() const noexcept {
                 std::string chain_value;
                 std::string action_value;
                 
+                // Check for nested rules under a rule (not allowed)
+                for (const auto* rule_content : rule_block->get_statements()) {
+                    const SectionStatement* nested_section = dynamic_cast<const SectionStatement*>(rule_content);
+                    if (nested_section) {
+                        const std::string& parent_name = rule->get_name();
+                        const std::string& child_name = nested_section->get_name();
+                        
+                        // Check if this is a valid nested relationship
+                        bool valid_nesting = false;
+                        
+                        // Exception for template/group sections
+                        if (parent_name == "template" || parent_name == "group") {
+                            valid_nesting = true;
+                        }
+                        
+                        if (!valid_nesting) {
+                            return {false, "Semantic error: Firewall rule '" + child_name + 
+                                    "' cannot be defined under rule '" + parent_name + 
+                                    "'. Each firewall rule must be defined directly under its parent section."};
+                        }
+                    }
+                }
+                
                 // Validate rule properties
                 for (const auto* prop_stmt : rule_block->get_statements()) {
                     const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(prop_stmt);
                     if (!prop) {
-                        return {false, "Filter rule can only contain property statements"};
+                        // We already checked for nested sections above
+                        continue;
                     }
                     
                     std::string prop_name = prop->get_name();
@@ -1747,6 +1877,29 @@ std::tuple<bool, std::string> FirewallSection::validate() const noexcept {
                     return {false, "NAT rule '" + rule->get_name() + "' is missing its block"};
                 }
                 
+                // Check for nested rules under a rule (not allowed)
+                for (const auto* rule_content : rule_block->get_statements()) {
+                    const SectionStatement* nested_section = dynamic_cast<const SectionStatement*>(rule_content);
+                    if (nested_section) {
+                        const std::string& parent_name = rule->get_name();
+                        const std::string& child_name = nested_section->get_name();
+                        
+                        // Check if this is a valid nested relationship
+                        bool valid_nesting = false;
+                        
+                        // Exception for template/group sections
+                        if (parent_name == "template" || parent_name == "group") {
+                            valid_nesting = true;
+                        }
+                        
+                        if (!valid_nesting) {
+                            return {false, "Semantic error: NAT rule '" + child_name + 
+                                    "' cannot be defined under rule '" + parent_name + 
+                                    "'. Each NAT rule must be defined directly under the NAT section."};
+                        }
+                    }
+                }
+                
                 bool has_chain = false;
                 bool has_action = false;
                 std::string chain_value;
@@ -1756,7 +1909,8 @@ std::tuple<bool, std::string> FirewallSection::validate() const noexcept {
                 for (const auto* prop_stmt : rule_block->get_statements()) {
                     const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(prop_stmt);
                     if (!prop) {
-                        return {false, "NAT rule can only contain property statements"};
+                        // We already checked for nested sections above
+                        continue;
                     }
                     
                     std::string prop_name = prop->get_name();
@@ -1848,7 +2002,38 @@ std::tuple<bool, std::string> FirewallSection::validate() const noexcept {
                 }
             }
         }
-        // Add validation for other subsections if needed (mangle, raw, etc.)
+        // Validate other subsections (mangle, raw, etc.)
+        else {
+            // For other section types, just check that they don't have improper nesting
+            for (const auto* section_stmt : subsection_block->get_statements()) {
+                const SectionStatement* section_item = dynamic_cast<const SectionStatement*>(section_stmt);
+                
+                if (section_item && section_item->get_block()) {
+                    // Check for nested items
+                    for (const auto* nested_stmt : section_item->get_block()->get_statements()) {
+                        const SectionStatement* nested_section = dynamic_cast<const SectionStatement*>(nested_stmt);
+                        if (nested_section) {
+                            const std::string& parent_name = section_item->get_name();
+                            const std::string& child_name = nested_section->get_name();
+                            
+                            // Check if this is a valid nested relationship
+                            bool valid_nesting = false;
+                            
+                            // Exception for template/group sections
+                            if (parent_name == "template" || parent_name == "group") {
+                                valid_nesting = true;
+                            }
+                            
+                            if (!valid_nesting) {
+                                return {false, "Semantic error: Section '" + child_name + 
+                                        "' cannot be defined under '" + parent_name + 
+                                        "' in the firewall '" + section_name + "' section. Improper nesting detected."};
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     return {true, ""};
