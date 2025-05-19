@@ -524,3 +524,245 @@ bool IPValidator::isValidNesting(const std::string& parent_name,
     // Allow nesting for standard subsections like route, dns, etc.
     return true;
 }
+
+RoutingValidator::RoutingValidator()
+    : SectionValidator("routing", NestingRule::CONDITIONAL_NESTING) {
+}
+
+std::tuple<bool, std::string> RoutingValidator::validateProperties(
+    const SectionStatement* section) const {
+    
+    // Define regular expression for IPv4 validation
+    std::regex ipv4_pattern("^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$");
+    std::regex cidr_pattern("^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\/(3[0-2]|[1-2]?[0-9]))$");
+    
+    // Define valid routing section properties
+    const std::set<std::string> valid_top_props = {
+        "static_route_default_gw" // Default gateway property
+    };
+    
+    // Define valid properties for static routes
+    const std::set<std::string> valid_route_props = {
+        "destination", "dst-address", "dst",       // Destination network
+        "gateway", "gw",                          // Next hop
+        "distance",                               // Administrative distance
+        "routing-table", "table",                 // Routing table name
+        "check-gateway",                          // Failover check method
+        "scope",                                  // Route scope
+        "target-scope",                           // Target scope
+        "suppress-hw-offload"                     // Hardware offload control
+    };
+    
+    // Define valid routing subsections
+    const std::set<std::string> valid_subsections = {
+        "table", "tables", "rule", "rules", "filter"
+    };
+    
+    std::string section_name = section->get_name();
+    
+    // First, check if this is a direct property entry (top-level)
+    const PropertyStatement* prop = dynamic_cast<const PropertyStatement*>(section);
+    if (prop) {
+        const std::string& name = prop->get_name();
+        
+        // Check if it's a valid top-level property
+        if (valid_top_props.find(name) == valid_top_props.end()) {
+            return {false, "Invalid property '" + name + "' in routing section. Top-level routing properties are limited."};
+        }
+        
+        // Validate default gateway
+        if (name == "static_route_default_gw") {
+            // Validate gateway IP address
+            if (prop->get_value()) {
+                const StringValue* gw_value = dynamic_cast<const StringValue*>(prop->get_value());
+                if (gw_value) {
+                    std::string gateway = gw_value->get_value();
+                    // Remove quotes if present
+                    if (gateway.size() >= 2 && gateway.front() == '"' && gateway.back() == '"') {
+                        gateway = gateway.substr(1, gateway.size() - 2);
+                    }
+                    
+                    // Validate gateway format using regex
+                    if (!std::regex_match(gateway, ipv4_pattern)) {
+                        return {false, "Invalid default gateway IP address format: " + gateway};
+                    }
+                }
+            }
+        }
+        
+        return {true, ""};
+    }
+    
+    // Check for standard subsections
+    bool is_standard_subsection = false;
+    for (const auto& valid_name : valid_subsections) {
+        if (section_name == valid_name) {
+            is_standard_subsection = true;
+            break;
+        }
+    }
+    
+    // Table subsections validation
+    if (section_name == "table" || section_name == "tables") {
+        const BlockStatement* block = section->get_block();
+        if (!block) {
+            return {false, "Routing table section is missing its block"};
+        }
+        
+        // Validation for table entries happens in isValidNesting
+        
+        return {true, ""};
+    }
+    
+    // Rule subsections validation
+    if (section_name == "rule" || section_name == "rules") {
+        const BlockStatement* block = section->get_block();
+        if (!block) {
+            return {false, "Routing rule section is missing its block"};
+        }
+        
+        // Validation for rule entries happens in isValidNesting
+        
+        return {true, ""};
+    }
+    
+    // Check if this is a route definition (neither standard subsection nor direct property)
+    if (!is_standard_subsection) {
+        const BlockStatement* block = section->get_block();
+        if (!block) {
+            return {false, "Route entry '" + section_name + "' is missing its block"};
+        }
+        
+        bool has_destination = false;
+        bool has_gateway = false;
+        
+        // Validate route properties
+        for (const Statement* route_stmt : block->get_statements()) {
+            // Skip nested statements as they are validated by hierarchy validation
+            if (dynamic_cast<const SectionStatement*>(route_stmt)) {
+                continue;
+            }
+            
+            const PropertyStatement* route_prop = dynamic_cast<const PropertyStatement*>(route_stmt);
+            if (route_prop) {
+                const std::string& prop_name = route_prop->get_name();
+                
+                // Check if this is a valid route property
+                if (valid_route_props.find(prop_name) == valid_route_props.end()) {
+                    return {false, "Invalid property '" + prop_name + "' in route '" + section_name + "'"};
+                }
+                
+                // Validate destination
+                if (prop_name == "destination" || prop_name == "dst-address" || prop_name == "dst") {
+                    has_destination = true;
+                    
+                    // Validate destination format
+                    if (route_prop->get_value()) {
+                        const StringValue* dst_value = dynamic_cast<const StringValue*>(route_prop->get_value());
+                        if (dst_value) {
+                            std::string destination = dst_value->get_value();
+                            // Remove quotes if present
+                            if (destination.size() >= 2 && destination.front() == '"' && destination.back() == '"') {
+                                destination = destination.substr(1, destination.size() - 2);
+                            }
+                            
+                            // Validate CIDR format
+                            if (!std::regex_match(destination, cidr_pattern)) {
+                                return {false, "Invalid destination network format in route '" + 
+                                              section_name + "': " + destination + 
+                                              ". Must be in CIDR format (e.g. 192.168.1.0/24)"};
+                            }
+                        }
+                    }
+                }
+                
+                // Validate gateway
+                if (prop_name == "gateway" || prop_name == "gw") {
+                    has_gateway = true;
+                    
+                    // Validate gateway format
+                    if (route_prop->get_value()) {
+                        const StringValue* gw_value = dynamic_cast<const StringValue*>(route_prop->get_value());
+                        if (gw_value) {
+                            std::string gateway = gw_value->get_value();
+                            // Remove quotes if present
+                            if (gateway.size() >= 2 && gateway.front() == '"' && gateway.back() == '"') {
+                                gateway = gateway.substr(1, gateway.size() - 2);
+                            }
+                            
+                            // Allow interface names, IP addresses, or routing marks
+                            if (!std::regex_match(gateway, ipv4_pattern) && 
+                                gateway.find("ether") != 0 && 
+                                gateway.find("wlan") != 0 &&
+                                gateway.find("bridge") != 0) {
+                                
+                                // If not an IP or common interface, warn but don't fail
+                                // (could be a custom interface name or routing mark)
+                                // Consider adding more validation here if needed
+                            }
+                        }
+                    }
+                }
+                
+                // Validate distance
+                if (prop_name == "distance") {
+                    if (route_prop->get_value()) {
+                        const NumberValue* distance_value = dynamic_cast<const NumberValue*>(route_prop->get_value());
+                        if (!distance_value) {
+                            return {false, "Distance property in route '" + section_name + 
+                                          "' must be a number"};
+                        }
+                        
+                        // Check distance range (1-255)
+                        double distance = distance_value->get_value();
+                        if (distance < 1 || distance > 255) {
+                            return {false, "Distance value in route '" + section_name + 
+                                          "' must be between 1 and 255"};
+                        }
+                    }
+                }
+            }
+        }
+        
+        // All static routes should have both destination and gateway
+        if (!has_destination) {
+            return {false, "Route '" + section_name + "' is missing required 'destination/dst-address' property"};
+        }
+        
+        if (!has_gateway) {
+            return {false, "Route '" + section_name + "' is missing required 'gateway' property"};
+        }
+    }
+    
+    return {true, ""};
+}
+
+bool RoutingValidator::isValidNesting(const std::string& parent_name, 
+                                    const std::string& child_name) const {
+    // Define valid routing subsections
+    const std::set<std::string> valid_subsections = {
+        "table", "tables", "rule", "rules", "filter"
+    };
+    
+    // Check if parent is a standard subsection
+    bool is_standard_subsection = false;
+    for (const auto& valid_name : valid_subsections) {
+        if (parent_name == valid_name) {
+            is_standard_subsection = true;
+            break;
+        }
+    }
+    
+    // Exception for template/group sections
+    if (parent_name == "template" || parent_name == "group") {
+        return true;
+    }
+    
+    // For table or rule subsections - generally no nesting allowed
+    if (is_standard_subsection) {
+        return false;
+    }
+    
+    // For regular routes - no nesting allowed
+    return false;
+}

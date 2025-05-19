@@ -148,6 +148,9 @@ public:
 protected:
     std::tuple<bool, std::string> validateProperties(
         const SectionStatement* section) const override;
+        
+    bool isValidNesting(const std::string& parent_name, 
+                       const std::string& child_name) const override;
 };
 
 /**
